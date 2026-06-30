@@ -29,8 +29,8 @@ public class App {
 
   public static void main(String[] args) throws IOException {
     int port = getEnvInt("PORT", 6379);
-    int maxClients = getEnvInt("POOL_SIZE", 100);
-    long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 1000);
+    int maxClients = getEnvInt("POOL_SIZE", 1000);
+    long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 10_000);
     String aofPath = System.getenv("AOF_FILE");
     boolean aofEnabled = aofPath != null && !aofPath.isBlank();
 
@@ -60,7 +60,7 @@ public class App {
     ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
 
     final AofWriter writerRef = aofWriter;
-    try (ServerSocket serverSocket = new ServerSocket(port)) {
+    try (ServerSocket serverSocket = new ServerSocket(port, 1024)) {
       Runtime.getRuntime()
           .addShutdownHook(
               new Thread(
