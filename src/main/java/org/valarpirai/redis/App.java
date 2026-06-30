@@ -33,7 +33,8 @@ public class App {
     int port = getEnvInt("PORT", 6379);
     int maxClients = getEnvInt("POOL_SIZE", 1000);
     long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 10_000);
-    long maxMemoryBytes = getEnvLong("MAX_MEMORY_BYTES", 0);
+    long maxMemoryMb = getEnvLong("MAX_MEMORY_MB", 0);
+    long maxMemoryBytes = maxMemoryMb * 1024 * 1024;
     EvictionPolicy evictionPolicy = EvictionPolicy.from(System.getenv("EVICTION_POLICY"));
     String aofPath = System.getenv("AOF_FILE");
     boolean aofEnabled = aofPath != null && !aofPath.isBlank();
@@ -43,8 +44,7 @@ public class App {
     log.info("  port            : {}", port);
     log.info("  max_clients     : {}", maxClients);
     log.info("  threads         : virtual");
-    log.info(
-        "  max_memory      : {}", maxMemoryBytes == 0 ? "unlimited" : maxMemoryBytes + " bytes");
+    log.info("  max_memory      : {}", maxMemoryMb == 0 ? "unlimited" : maxMemoryMb + " MB");
     log.info("  eviction_policy : {}", evictionPolicy.label());
     log.info("  aof_enabled     : {}", aofEnabled);
     if (aofEnabled) {

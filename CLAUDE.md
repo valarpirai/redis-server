@@ -12,7 +12,8 @@ mvn exec:java            # run server (port 6379)
 PORT=7379 mvn exec:java  # run on custom port
 POOL_SIZE=10 mvn exec:java  # custom thread pool size
 AOF_FILE=redis.aof mvn exec:java  # enable AOF persistence
-CLEAN_INTERVAL_MS=500 mvn exec:java  # expiry cleaner interval (default 1000)
+MAX_MEMORY_MB=64 mvn exec:java    # cap memory at 64 MB (default 0 = unlimited)
+CLEAN_INTERVAL_MS=500 mvn exec:java  # expiry cleaner interval (default 10000)
 mvn package              # build fat jar
 java -jar target/redis-server-1.0-SNAPSHOT.jar
 ```
