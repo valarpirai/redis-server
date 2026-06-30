@@ -8,6 +8,7 @@
     <Or>
       <Class name="org.valarpirai.redis.server.ClientHandler"/>
       <Class name="org.valarpirai.redis.command.CommandExecutor"/>
+      <Class name="org.valarpirai.redis.storage.ExpiryCleanerWorker"/>
     </Or>
   </Match>
 

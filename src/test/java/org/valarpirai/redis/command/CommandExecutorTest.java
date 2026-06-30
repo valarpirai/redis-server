@@ -2,11 +2,18 @@ package org.valarpirai.redis.command;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.InMemoryStorage;
 
 class CommandExecutorTest {
+
+  @TempDir Path tempDir;
 
   private CommandExecutor executor;
 
@@ -150,5 +157,67 @@ class CommandExecutorTest {
     executor.execute("EXPIRE key 0");
     Thread.sleep(10);
     assertEquals("(nil)", executor.execute("GET key"));
+  }
+
+  @Test
+  void expireAtReturnsTrueForExistingKey() {
+    executor.execute("SET key value");
+    long future = System.currentTimeMillis() + 10_000;
+    assertEquals("1", executor.execute("EXPIREAT key " + future));
+  }
+
+  @Test
+  void expireAtReturnsFalseForMissingKey() {
+    long future = System.currentTimeMillis() + 10_000;
+    assertEquals("0", executor.execute("EXPIREAT missing " + future));
+  }
+
+  @Test
+  void expireAtWithPastTimestampExpiresKey() throws InterruptedException {
+    executor.execute("SET key value");
+    executor.execute("EXPIREAT key " + (System.currentTimeMillis() - 1));
+    Thread.sleep(10);
+    assertEquals("(nil)", executor.execute("GET key"));
+  }
+
+  @Test
+  void expireAtInvalidTimestampReturnsError() {
+    executor.execute("SET key value");
+    assertTrue(executor.execute("EXPIREAT key notanumber").startsWith("-ERR"));
+  }
+
+  @Test
+  void setWritesToAof() throws IOException {
+    Path aofFile = tempDir.resolve("test.aof");
+    try (var aofWriter = new AofWriter(aofFile.toString())) {
+      var exec = new CommandExecutor(new InMemoryStorage(), aofWriter);
+      exec.execute("SET foo bar");
+    }
+    String content = Files.readString(aofFile);
+    assertTrue(content.contains("SET"));
+    assertTrue(content.contains("foo"));
+    assertTrue(content.contains("bar"));
+  }
+
+  @Test
+  void delWritesToAofOnlyWhenKeyExists() throws IOException {
+    Path aofFile = tempDir.resolve("test.aof");
+    try (var aofWriter = new AofWriter(aofFile.toString())) {
+      var exec = new CommandExecutor(new InMemoryStorage(), aofWriter);
+      exec.execute("DEL missing");
+    }
+    assertEquals(0, Files.size(aofFile));
+  }
+
+  @Test
+  void expireWritesExpireatToAof() throws IOException {
+    Path aofFile = tempDir.resolve("test.aof");
+    try (var aofWriter = new AofWriter(aofFile.toString())) {
+      var exec = new CommandExecutor(new InMemoryStorage(), aofWriter);
+      exec.execute("SET key value");
+      exec.execute("EXPIRE key 60");
+    }
+    String content = Files.readString(aofFile);
+    assertTrue(content.contains("EXPIREAT"));
   }
 }

@@ -113,4 +113,48 @@ class InMemoryStorageTest {
     Thread.sleep(10);
     assertFalse(storage.exists("key"));
   }
+
+  @Test
+  void expireAtWithFutureTimestamp() {
+    storage.set("key", "value");
+    long epochMs = System.currentTimeMillis() + 10_000;
+    assertTrue(storage.expireAt("key", epochMs));
+    assertTrue(storage.get("key").isPresent());
+  }
+
+  @Test
+  void expireAtWithPastTimestampExpires() throws InterruptedException {
+    storage.set("key", "value");
+    storage.expireAt("key", System.currentTimeMillis() - 1);
+    Thread.sleep(10);
+    assertTrue(storage.get("key").isEmpty());
+  }
+
+  @Test
+  void expireAtReturnsFalseForMissingKey() {
+    assertFalse(storage.expireAt("missing", System.currentTimeMillis() + 10_000));
+  }
+
+  @Test
+  void cleanExpiredRemovesExpiredKeys() throws InterruptedException {
+    storage.set("a", "1");
+    storage.set("b", "2");
+    storage.expire("a", 0);
+    Thread.sleep(10);
+    int evicted = storage.cleanExpired();
+    assertEquals(1, evicted);
+    assertTrue(storage.get("b").isPresent());
+  }
+
+  @Test
+  void cleanExpiredIgnoresLiveKeys() {
+    storage.set("a", "1");
+    storage.set("b", "2");
+    assertEquals(0, storage.cleanExpired());
+  }
+
+  @Test
+  void cleanExpiredReturnsZeroWhenEmpty() {
+    assertEquals(0, storage.cleanExpired());
+  }
 }

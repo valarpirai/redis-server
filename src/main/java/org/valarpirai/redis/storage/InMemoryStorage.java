@@ -57,4 +57,28 @@ public class InMemoryStorage implements IStorage {
     long remaining = (entry.expiresAt() - System.currentTimeMillis()) / 1000;
     return Math.max(0, remaining);
   }
+
+  @Override
+  public boolean expireAt(String key, long epochMs) {
+    Entry entry = storage.get(key);
+    if (entry == null || entry.isExpired()) return false;
+    storage.put(key, new Entry(entry.value(), epochMs));
+    return true;
+  }
+
+  @Override
+  public int cleanExpired() {
+    int[] count = {0};
+    storage
+        .entrySet()
+        .removeIf(
+            e -> {
+              if (e.getValue().isExpired()) {
+                count[0]++;
+                return true;
+              }
+              return false;
+            });
+    return count[0];
+  }
 }

@@ -16,4 +16,10 @@ public interface IStorage {
 
   /** Returns seconds remaining, -1 if no expiry, -2 if key missing. */
   long ttl(String key);
+
+  /** Sets expiry as an absolute epoch millisecond. Returns false if the key does not exist. */
+  boolean expireAt(String key, long epochMs);
+
+  /** Removes all expired keys. Returns the number of keys evicted. */
+  int cleanExpired();
 }
