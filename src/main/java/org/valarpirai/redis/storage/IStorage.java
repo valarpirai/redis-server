@@ -25,4 +25,13 @@ public interface IStorage {
 
   /** Returns the number of live (non-expired) keys. */
   int size();
+
+  /** Approximate sum of all key and value lengths in bytes. Excludes JVM overhead. */
+  long usedMemoryBytes();
+
+  /**
+   * Evicts one key according to policy. Returns false if no candidate was found or policy is
+   * NOEVICTION.
+   */
+  boolean evict(EvictionPolicy policy);
 }

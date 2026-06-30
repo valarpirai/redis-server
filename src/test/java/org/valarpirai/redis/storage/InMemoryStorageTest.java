@@ -178,4 +178,51 @@ class InMemoryStorageTest {
   void sizeIsZeroWhenEmpty() {
     assertEquals(0, storage.size());
   }
+
+  @Test
+  void usedMemoryBytesReflectsStoredData() {
+    storage.set("key", "value");
+    assertTrue(storage.usedMemoryBytes() > 0);
+  }
+
+  @Test
+  void usedMemoryBytesIsZeroWhenEmpty() {
+    assertEquals(0, storage.usedMemoryBytes());
+  }
+
+  @Test
+  void evictAllkeysLruRemovesLeastRecentlyAccessed() throws InterruptedException {
+    storage.set("old", "1");
+    Thread.sleep(5);
+    storage.set("new", "2");
+    storage.get("new");
+
+    assertTrue(storage.evict(EvictionPolicy.ALLKEYS_LRU));
+    assertTrue(storage.get("old").isEmpty());
+    assertTrue(storage.get("new").isPresent());
+  }
+
+  @Test
+  void evictVolatileLruOnlyRemovesKeysWithTtl() {
+    storage.set("persistent", "1");
+    storage.set("expiring", "2");
+    storage.expire("expiring", 60);
+
+    assertTrue(storage.evict(EvictionPolicy.VOLATILE_LRU));
+    assertTrue(storage.get("persistent").isPresent());
+    assertTrue(storage.get("expiring").isEmpty());
+  }
+
+  @Test
+  void evictNoevictionReturnsFalse() {
+    storage.set("key", "value");
+    assertFalse(storage.evict(EvictionPolicy.NOEVICTION));
+    assertTrue(storage.get("key").isPresent());
+  }
+
+  @Test
+  void evictReturnsFalseWhenNoVolatileKeys() {
+    storage.set("persistent", "1");
+    assertFalse(storage.evict(EvictionPolicy.VOLATILE_LRU));
+  }
 }

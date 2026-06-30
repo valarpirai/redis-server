@@ -1,0 +1,5 @@
+target/
+.git/
+*.aof
+*.md
+.java-version

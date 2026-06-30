@@ -3,6 +3,7 @@ package org.valarpirai.redis.command;
 import java.util.Arrays;
 import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
+import org.valarpirai.redis.storage.EvictionPolicy;
 import org.valarpirai.redis.storage.IStorage;
 
 public class CommandExecutor {
@@ -10,19 +11,32 @@ public class CommandExecutor {
   private final IStorage storage;
   private final AofWriter aofWriter;
   private final ServerStats stats;
+  private final long maxMemoryBytes;
+  private final EvictionPolicy evictionPolicy;
 
   public CommandExecutor(IStorage storage) {
-    this(storage, null, null);
+    this(storage, null, null, 0, EvictionPolicy.NOEVICTION);
   }
 
   public CommandExecutor(IStorage storage, AofWriter aofWriter) {
-    this(storage, aofWriter, null);
+    this(storage, aofWriter, null, 0, EvictionPolicy.NOEVICTION);
   }
 
   public CommandExecutor(IStorage storage, AofWriter aofWriter, ServerStats stats) {
+    this(storage, aofWriter, stats, 0, EvictionPolicy.NOEVICTION);
+  }
+
+  public CommandExecutor(
+      IStorage storage,
+      AofWriter aofWriter,
+      ServerStats stats,
+      long maxMemoryBytes,
+      EvictionPolicy evictionPolicy) {
     this.storage = storage;
     this.aofWriter = aofWriter;
     this.stats = stats;
+    this.maxMemoryBytes = maxMemoryBytes;
+    this.evictionPolicy = evictionPolicy;
   }
 
   public CommandResult executeCommand(String[] tokens) {
@@ -49,6 +63,8 @@ public class CommandExecutor {
         {
           if (tokens.length < 3)
             return CommandResult.error("-ERR wrong number of arguments for 'SET'");
+          CommandResult oom = enforceMemoryLimit();
+          if (oom != null) return oom;
           String value = String.join(" ", Arrays.copyOfRange(tokens, 2, tokens.length));
           storage.set(tokens[1], value);
           appendToAof("SET", tokens[1], value);
@@ -132,6 +148,19 @@ public class CommandExecutor {
     };
   }
 
+  private CommandResult enforceMemoryLimit() {
+    if (maxMemoryBytes <= 0) return null;
+    while (storage.usedMemoryBytes() >= maxMemoryBytes) {
+      if (evictionPolicy == EvictionPolicy.NOEVICTION) {
+        return CommandResult.error("-OOM command not allowed when used memory > 'maxmemory'");
+      }
+      if (!storage.evict(evictionPolicy)) {
+        return CommandResult.error("-OOM unable to evict keys to free memory");
+      }
+    }
+    return null;
+  }
+
   private void appendToAof(String... command) {
     if (aofWriter != null) aofWriter.append(command);
   }
@@ -150,6 +179,10 @@ public class CommandExecutor {
         .append("\r\n");
     sb.append("# Keys\r\n");
     sb.append("total_keys:").append(storage.size()).append("\r\n");
+    sb.append("# Memory\r\n");
+    sb.append("used_memory_bytes:").append(storage.usedMemoryBytes()).append("\r\n");
+    sb.append("max_memory_bytes:").append(maxMemoryBytes).append("\r\n");
+    sb.append("eviction_policy:").append(evictionPolicy.label()).append("\r\n");
     sb.append("# Persistence\r\n");
     sb.append("aof_enabled:").append(aofWriter != null ? 1 : 0).append("\r\n");
     return sb.toString();

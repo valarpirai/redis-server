@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
+import org.valarpirai.redis.storage.EvictionPolicy;
 import org.valarpirai.redis.storage.InMemoryStorage;
 
 class CommandExecutorTest {
@@ -249,5 +250,31 @@ class CommandExecutorTest {
     String result = executor.execute("STATS");
     assertTrue(result.contains("uptime_seconds:"));
     assertTrue(result.contains("total_keys:"));
+  }
+
+  @Test
+  void setReturnsOomWhenMaxMemoryExceededWithNoeviction() {
+    var storage = new InMemoryStorage();
+    storage.set("seed", "data");
+    long limit = storage.usedMemoryBytes() - 1; // already over limit
+    var exec = new CommandExecutor(storage, null, null, limit, EvictionPolicy.NOEVICTION);
+    assertTrue(exec.execute("SET key value").startsWith("-OOM"));
+  }
+
+  @Test
+  void setEvictsKeyWhenMaxMemoryExceededWithLru() {
+    var storage = new InMemoryStorage();
+    storage.set("old", "value");
+    long limit = storage.usedMemoryBytes();
+    var exec = new CommandExecutor(storage, null, null, limit, EvictionPolicy.ALLKEYS_LRU);
+    assertEquals("OK", exec.execute("SET new value"));
+  }
+
+  @Test
+  void statsIncludesMemoryFields() {
+    String result = executor.execute("STATS");
+    assertTrue(result.contains("used_memory_bytes:"));
+    assertTrue(result.contains("max_memory_bytes:0"));
+    assertTrue(result.contains("eviction_policy:noeviction"));
   }
 }

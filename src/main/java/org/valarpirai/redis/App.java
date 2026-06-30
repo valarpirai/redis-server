@@ -19,7 +19,9 @@ import org.valarpirai.redis.protocol.RespDecoder;
 import org.valarpirai.redis.server.ClientHandler;
 import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
+import org.valarpirai.redis.storage.EvictionPolicy;
 import org.valarpirai.redis.storage.ExpiryCleanerWorker;
+import org.valarpirai.redis.storage.FsyncPolicy;
 import org.valarpirai.redis.storage.InMemoryStorage;
 
 public class App {
@@ -31,15 +33,24 @@ public class App {
     int port = getEnvInt("PORT", 6379);
     int maxClients = getEnvInt("POOL_SIZE", 1000);
     long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 10_000);
+    long maxMemoryBytes = getEnvLong("MAX_MEMORY_BYTES", 0);
+    EvictionPolicy evictionPolicy = EvictionPolicy.from(System.getenv("EVICTION_POLICY"));
     String aofPath = System.getenv("AOF_FILE");
     boolean aofEnabled = aofPath != null && !aofPath.isBlank();
+    FsyncPolicy fsyncPolicy = FsyncPolicy.from(System.getenv("AOF_FSYNC"));
 
     log.info("=== Redis Server Configuration ===");
     log.info("  port            : {}", port);
     log.info("  max_clients     : {}", maxClients);
     log.info("  threads         : virtual");
+    log.info(
+        "  max_memory      : {}", maxMemoryBytes == 0 ? "unlimited" : maxMemoryBytes + " bytes");
+    log.info("  eviction_policy : {}", evictionPolicy.label());
     log.info("  aof_enabled     : {}", aofEnabled);
-    if (aofEnabled) log.info("  aof_file        : {}", aofPath);
+    if (aofEnabled) {
+      log.info("  aof_file        : {}", aofPath);
+      log.info("  aof_fsync       : {}", fsyncPolicy.name().toLowerCase());
+    }
     log.info("  clean_interval  : {}ms", cleanIntervalMs);
     log.info("==================================");
 
@@ -49,9 +60,10 @@ public class App {
       replayAof(aofPath, storage);
     }
 
-    AofWriter aofWriter = aofEnabled ? new AofWriter(aofPath) : null;
+    AofWriter aofWriter = aofEnabled ? new AofWriter(aofPath, fsyncPolicy) : null;
     var serverStats = new ServerStats();
-    var commandExecutor = new CommandExecutor(storage, aofWriter, serverStats);
+    var commandExecutor =
+        new CommandExecutor(storage, aofWriter, serverStats, maxMemoryBytes, evictionPolicy);
 
     var cleaner = new ExpiryCleanerWorker(storage, cleanIntervalMs);
     cleaner.start();
