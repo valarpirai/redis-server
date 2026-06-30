@@ -40,6 +40,7 @@ App → ServerSocket → ClientHandler (per connection, pooled)
 
 | File | What it covers |
 |------|---------------|
+| [docs/architecture.md](docs/architecture.md) | Deep-dive: component map, threading model, request lifecycle, protocol, and phased future architecture |
 | [docs/java-guidelines.md](docs/java-guidelines.md) | Style, concurrency rules, how to add commands, testing setup, protocol notes |
 | [docs/design-principles.md](docs/design-principles.md) | SOLID, DRY, YAGNI, and which patterns are in use |
 
