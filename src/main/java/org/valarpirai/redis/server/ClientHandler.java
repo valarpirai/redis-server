@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Semaphore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.valarpirai.redis.command.CommandExecutor;
@@ -16,6 +17,31 @@ import org.valarpirai.redis.protocol.RespEncoder;
 public class ClientHandler implements Runnable {
 
   private static final Logger log = LoggerFactory.getLogger(ClientHandler.class);
+
+  public static void handle(
+      Socket socket,
+      Semaphore semaphore,
+      int maxClients,
+      int idleTimeoutMs,
+      CommandExecutor executor,
+      ServerStats stats) {
+    if (!semaphore.tryAcquire()) {
+      log.warn("Max clients ({}) reached, rejecting connection", maxClients);
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+      }
+      return;
+    }
+    try {
+      socket.setSoTimeout(idleTimeoutMs);
+      new ClientHandler(socket, executor, stats).run();
+    } catch (IOException e) {
+      log.error("Socket setup error: {}", e.getMessage());
+    } finally {
+      semaphore.release();
+    }
+  }
 
   private final Socket socket;
   private final CommandExecutor commandExecutor;

@@ -55,37 +55,20 @@ public class App {
           Socket clientSocket = serverSocket.accept();
           log.info("Client connected: {}", clientSocket.getInetAddress());
           threadPool.submit(
-              () -> handleClient(clientSocket, semaphore, config, commandExecutor, serverStats));
+              () ->
+                  ClientHandler.handle(
+                      clientSocket,
+                      semaphore,
+                      config.maxClients(),
+                      IDLE_TIMEOUT_MS,
+                      commandExecutor,
+                      serverStats));
         } catch (IOException e) {
           if (!serverSocket.isClosed()) log.error("Accept error: {}", e.getMessage());
         }
       }
     } finally {
       threadPool.shutdown();
-    }
-  }
-
-  private static void handleClient(
-      Socket socket,
-      Semaphore semaphore,
-      Config config,
-      CommandExecutor executor,
-      ServerStats stats) {
-    if (!semaphore.tryAcquire()) {
-      log.warn("Max clients ({}) reached, rejecting connection", config.maxClients());
-      try {
-        socket.close();
-      } catch (IOException ignored) {
-      }
-      return;
-    }
-    try {
-      socket.setSoTimeout(IDLE_TIMEOUT_MS);
-      new ClientHandler(socket, executor, stats).run();
-    } catch (IOException e) {
-      log.error("Socket setup error: {}", e.getMessage());
-    } finally {
-      semaphore.release();
     }
   }
 
