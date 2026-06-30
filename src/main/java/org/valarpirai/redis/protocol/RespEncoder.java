@@ -14,6 +14,11 @@ public class RespEncoder {
       case CommandResult.Integer r -> ":" + r.value() + "\r\n";
       case CommandResult.Error r -> r.message() + "\r\n";
       case CommandResult.Nil r -> "$-1\r\n";
+      case CommandResult.Array r -> {
+        StringBuilder sb = new StringBuilder("*").append(r.elements().size()).append("\r\n");
+        for (CommandResult el : r.elements()) sb.append(encode(el));
+        yield sb.toString();
+      }
     };
   }
 }

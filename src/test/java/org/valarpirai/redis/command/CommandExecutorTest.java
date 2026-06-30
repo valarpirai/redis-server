@@ -277,4 +277,77 @@ class CommandExecutorTest {
     assertTrue(result.contains("max_memory_bytes:0"));
     assertTrue(result.contains("eviction_policy:noeviction"));
   }
+
+  @Test
+  void keysReturnsAllKeysForWildcard() {
+    executor.execute("SET foo 1");
+    executor.execute("SET bar 2");
+    executor.execute("SET baz 3");
+    CommandResult result = executor.executeCommand(new String[] {"KEYS", "*"});
+    assertInstanceOf(CommandResult.Array.class, result);
+    var arr = ((CommandResult.Array) result).elements();
+    assertEquals(3, arr.size());
+  }
+
+  @Test
+  void keysFiltersWithGlobPattern() {
+    executor.execute("SET hello 1");
+    executor.execute("SET hallo 2");
+    executor.execute("SET world 3");
+    CommandResult result = executor.executeCommand(new String[] {"KEYS", "h?llo"});
+    var arr = ((CommandResult.Array) result).elements();
+    assertEquals(2, arr.size());
+  }
+
+  @Test
+  void keysPrefixPattern() {
+    executor.execute("SET user:1 a");
+    executor.execute("SET user:2 b");
+    executor.execute("SET session:1 c");
+    CommandResult result = executor.executeCommand(new String[] {"KEYS", "user:*"});
+    var arr = ((CommandResult.Array) result).elements();
+    assertEquals(2, arr.size());
+  }
+
+  @Test
+  void keysReturnsEmptyArrayWhenNoMatch() {
+    executor.execute("SET foo 1");
+    CommandResult result = executor.executeCommand(new String[] {"KEYS", "z*"});
+    var arr = ((CommandResult.Array) result).elements();
+    assertTrue(arr.isEmpty());
+  }
+
+  @Test
+  void scanReturnsAllKeysOverMultipleCalls() {
+    for (int i = 0; i < 25; i++) executor.execute("SET key:" + i + " v");
+    int cursor = 0;
+    int total = 0;
+    do {
+      CommandResult result = executor.executeCommand(new String[] {"SCAN", String.valueOf(cursor)});
+      var outer = ((CommandResult.Array) result).elements();
+      cursor = Integer.parseInt(((CommandResult.Bulk) outer.get(0)).value());
+      total += ((CommandResult.Array) outer.get(1)).elements().size();
+    } while (cursor != 0);
+    assertEquals(25, total);
+  }
+
+  @Test
+  void scanWithMatchFiltersResults() {
+    executor.execute("SET user:1 a");
+    executor.execute("SET user:2 b");
+    executor.execute("SET other 3");
+    CommandResult result =
+        executor.executeCommand(new String[] {"SCAN", "0", "MATCH", "user:*", "COUNT", "100"});
+    var outer = ((CommandResult.Array) result).elements();
+    var keys = ((CommandResult.Array) outer.get(1)).elements();
+    assertEquals(2, keys.size());
+  }
+
+  @Test
+  void scanCursorZeroOnCompleteIteration() {
+    executor.execute("SET a 1");
+    CommandResult result = executor.executeCommand(new String[] {"SCAN", "0", "COUNT", "100"});
+    var outer = ((CommandResult.Array) result).elements();
+    assertEquals("0", ((CommandResult.Bulk) outer.get(0)).value());
+  }
 }

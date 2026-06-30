@@ -2,9 +2,11 @@ package org.valarpirai.redis.storage;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryStorage implements IStorage {
@@ -73,6 +75,15 @@ public class InMemoryStorage implements IStorage {
   @Override
   public int size() {
     return (int) storage.values().stream().filter(e -> !e.isExpired()).count();
+  }
+
+  @Override
+  public Set<String> keys() {
+    Set<String> result = new HashSet<>();
+    for (var entry : storage.entrySet()) {
+      if (!entry.getValue().isExpired()) result.add(entry.getKey());
+    }
+    return result;
   }
 
   @Override

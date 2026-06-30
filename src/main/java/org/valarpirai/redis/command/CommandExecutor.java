@@ -1,6 +1,11 @@
 package org.valarpirai.redis.command;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.EvictionPolicy;
@@ -124,6 +129,60 @@ public class CommandExecutor {
           return CommandResult.integer((int) storage.ttl(tokens[1]));
         }
 
+      case "KEYS":
+        {
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'KEYS'");
+          String pattern = tokens[1];
+          List<CommandResult> matched =
+              storage.keys().stream()
+                  .filter(k -> matchGlob(pattern, k))
+                  .sorted()
+                  .map(CommandResult::bulk)
+                  .collect(Collectors.toList());
+          return CommandResult.array(matched);
+        }
+
+      case "SCAN":
+        {
+          if (tokens.length < 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'SCAN'");
+          int cursor;
+          try {
+            cursor = Integer.parseInt(tokens[1]);
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+          String matchPattern = "*";
+          int count = 10;
+          for (int i = 2; i + 1 < tokens.length; i++) {
+            if (tokens[i].equalsIgnoreCase("MATCH")) matchPattern = tokens[++i];
+            else if (tokens[i].equalsIgnoreCase("COUNT")) {
+              try {
+                count = Integer.parseInt(tokens[++i]);
+              } catch (NumberFormatException e) {
+                return CommandResult.error("-ERR value is not an integer or out of range");
+              }
+            }
+          }
+          List<String> allKeys = new ArrayList<>(storage.keys());
+          Collections.sort(allKeys);
+          int start = Math.min(cursor, allKeys.size());
+          int end = Math.min(start + count, allKeys.size());
+          List<String> page = allKeys.subList(start, end);
+          String finalPattern = matchPattern;
+          List<CommandResult> pageResults =
+              page.stream()
+                  .filter(k -> matchGlob(finalPattern, k))
+                  .map(CommandResult::bulk)
+                  .collect(Collectors.toList());
+          int nextCursor = end >= allKeys.size() ? 0 : end;
+          return CommandResult.array(
+              List.of(
+                  CommandResult.bulk(String.valueOf(nextCursor)),
+                  CommandResult.array(pageResults)));
+        }
+
       case "STATS":
         return CommandResult.bulk(buildStats());
 
@@ -145,7 +204,46 @@ public class CommandExecutor {
       case CommandResult.Bulk r -> r.value();
       case CommandResult.Integer r -> String.valueOf(r.value());
       case CommandResult.Error r -> r.message();
+      case CommandResult.Array r ->
+          r.elements().stream()
+              .map(
+                  e ->
+                      switch (e) {
+                        case CommandResult.Bulk b -> b.value();
+                        case CommandResult.Integer i -> String.valueOf(i.value());
+                        case CommandResult.Nil n -> "(nil)";
+                        default -> "";
+                      })
+              .collect(Collectors.joining(","));
     };
+  }
+
+  private static boolean matchGlob(String pattern, String key) {
+    if (pattern.equals("*")) return true;
+    StringBuilder regex = new StringBuilder("^");
+    for (int i = 0; i < pattern.length(); i++) {
+      char c = pattern.charAt(i);
+      switch (c) {
+        case '*' -> regex.append(".*");
+        case '?' -> regex.append('.');
+        case '[' -> {
+          int j = pattern.indexOf(']', i + 1);
+          if (j < 0) regex.append("\\[");
+          else {
+            String cls = pattern.substring(i, j + 1);
+            regex.append(cls.replace("!", "^"));
+            i = j;
+          }
+        }
+        case '\\' -> {
+          if (i + 1 < pattern.length())
+            regex.append(Pattern.quote(String.valueOf(pattern.charAt(++i))));
+        }
+        default -> regex.append(Pattern.quote(String.valueOf(c)));
+      }
+    }
+    regex.append('$');
+    return key.matches(regex.toString());
   }
 
   private CommandResult enforceMemoryLimit() {

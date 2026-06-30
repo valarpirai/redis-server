@@ -1,6 +1,7 @@
 package org.valarpirai.redis.storage;
 
 import java.util.Optional;
+import java.util.Set;
 
 public interface IStorage {
   Optional<String> get(String key);
@@ -25,6 +26,9 @@ public interface IStorage {
 
   /** Returns the number of live (non-expired) keys. */
   int size();
+
+  /** Returns a snapshot of all live (non-expired) keys. */
+  Set<String> keys();
 
   /** Approximate sum of all key and value lengths in bytes. Excludes JVM overhead. */
   long usedMemoryBytes();

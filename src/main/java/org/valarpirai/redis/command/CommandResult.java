@@ -1,12 +1,15 @@
 package org.valarpirai.redis.command;
 
+import java.util.List;
+
 public sealed interface CommandResult
     permits CommandResult.Ok,
         CommandResult.Pong,
         CommandResult.Bulk,
         CommandResult.Integer,
         CommandResult.Error,
-        CommandResult.Nil {
+        CommandResult.Nil,
+        CommandResult.Array {
 
   record Ok() implements CommandResult {}
 
@@ -19,6 +22,8 @@ public sealed interface CommandResult
   record Error(String message) implements CommandResult {}
 
   record Nil() implements CommandResult {}
+
+  record Array(List<CommandResult> elements) implements CommandResult {}
 
   static CommandResult ok() {
     return new Ok();
@@ -42,5 +47,9 @@ public sealed interface CommandResult
 
   static CommandResult nil() {
     return new Nil();
+  }
+
+  static CommandResult array(List<CommandResult> elements) {
+    return new Array(elements);
   }
 }
