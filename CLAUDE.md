@@ -51,5 +51,5 @@ App → ServerSocket → ClientHandler (per connection, pooled)
 | File | What it covers |
 |------|---------------|
 | [docs/architecture.md](docs/architecture.md) | Deep-dive: component map, threading model, request lifecycle, RESP2 protocol, storage layer |
-| [docs/java-guidelines.md](docs/java-guidelines.md) | Style, concurrency rules, how to add commands, testing setup |
+| [docs/java-guidelines.md](docs/java-guidelines.md) | Style, quality gates (Enforcer/SpotBugs/JaCoCo/Spotless), logging, how to add commands, key types, testing |
 | [docs/design-principles.md](docs/design-principles.md) | SOLID, DRY, YAGNI, and which patterns are in use |
