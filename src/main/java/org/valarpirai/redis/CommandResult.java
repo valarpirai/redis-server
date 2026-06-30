@@ -1,36 +1,46 @@
 package org.valarpirai.redis;
 
-public record CommandResult(String value, Kind kind) {
+public sealed interface CommandResult
+    permits CommandResult.Ok,
+        CommandResult.Pong,
+        CommandResult.Bulk,
+        CommandResult.Integer,
+        CommandResult.Error,
+        CommandResult.Nil {
 
-  public enum Kind {
-    SIMPLE_STRING,
-    BULK_STRING,
-    INTEGER,
-    ERROR,
-    NIL
+  record Ok() implements CommandResult {}
+
+  record Pong() implements CommandResult {}
+
+  record Bulk(String value) implements CommandResult {}
+
+  record Integer(int value) implements CommandResult {}
+
+  record Error(String message) implements CommandResult {}
+
+  record Nil() implements CommandResult {}
+
+  static CommandResult ok() {
+    return new Ok();
   }
 
-  public static CommandResult ok() {
-    return new CommandResult("OK", Kind.SIMPLE_STRING);
+  static CommandResult pong() {
+    return new Pong();
   }
 
-  public static CommandResult pong() {
-    return new CommandResult("PONG", Kind.SIMPLE_STRING);
+  static CommandResult bulk(String value) {
+    return new Bulk(value);
   }
 
-  public static CommandResult nil() {
-    return new CommandResult(null, Kind.NIL);
+  static CommandResult integer(int value) {
+    return new Integer(value);
   }
 
-  public static CommandResult integer(int n) {
-    return new CommandResult(String.valueOf(n), Kind.INTEGER);
+  static CommandResult error(String message) {
+    return new Error(message);
   }
 
-  public static CommandResult bulk(String value) {
-    return new CommandResult(value, Kind.BULK_STRING);
-  }
-
-  public static CommandResult error(String message) {
-    return new CommandResult(message, Kind.ERROR);
+  static CommandResult nil() {
+    return new Nil();
   }
 }

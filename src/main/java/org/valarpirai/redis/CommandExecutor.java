@@ -81,6 +81,13 @@ public class CommandExecutor {
       return "-ERR empty command";
     }
     CommandResult result = executeCommand(commandStr.trim().split("\\s+"));
-    return result.kind() == CommandResult.Kind.NIL ? "(nil)" : result.value();
+    return switch (result) {
+      case CommandResult.Nil r -> "(nil)";
+      case CommandResult.Ok r -> "OK";
+      case CommandResult.Pong r -> "PONG";
+      case CommandResult.Bulk r -> r.value();
+      case CommandResult.Integer r -> String.valueOf(r.value());
+      case CommandResult.Error r -> r.message();
+    };
   }
 }
