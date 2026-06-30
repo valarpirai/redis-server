@@ -1,6 +1,7 @@
 package org.valarpirai.redis.command;
 
 import java.util.Arrays;
+import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.IStorage;
 
@@ -8,20 +9,28 @@ public class CommandExecutor {
 
   private final IStorage storage;
   private final AofWriter aofWriter;
+  private final ServerStats stats;
 
   public CommandExecutor(IStorage storage) {
-    this(storage, null);
+    this(storage, null, null);
   }
 
   public CommandExecutor(IStorage storage, AofWriter aofWriter) {
+    this(storage, aofWriter, null);
+  }
+
+  public CommandExecutor(IStorage storage, AofWriter aofWriter, ServerStats stats) {
     this.storage = storage;
     this.aofWriter = aofWriter;
+    this.stats = stats;
   }
 
   public CommandResult executeCommand(String[] tokens) {
     if (tokens == null || tokens.length == 0) {
       return CommandResult.error("-ERR empty command");
     }
+
+    if (stats != null) stats.commandProcessed();
 
     String command = tokens[0].toUpperCase();
 
@@ -99,6 +108,9 @@ public class CommandExecutor {
           return CommandResult.integer((int) storage.ttl(tokens[1]));
         }
 
+      case "STATS":
+        return CommandResult.bulk(buildStats());
+
       default:
         return CommandResult.error("-ERR unknown command '" + tokens[0] + "'");
     }
@@ -122,5 +134,24 @@ public class CommandExecutor {
 
   private void appendToAof(String... command) {
     if (aofWriter != null) aofWriter.append(command);
+  }
+
+  private String buildStats() {
+    var sb = new StringBuilder();
+    sb.append("# Server\r\n");
+    sb.append("uptime_seconds:").append(stats != null ? stats.uptimeSeconds() : 0).append("\r\n");
+    sb.append("# Clients\r\n");
+    sb.append("connected_clients:")
+        .append(stats != null ? stats.connectedClients() : 0)
+        .append("\r\n");
+    sb.append("# Stats\r\n");
+    sb.append("total_commands_processed:")
+        .append(stats != null ? stats.totalCommands() : 0)
+        .append("\r\n");
+    sb.append("# Keys\r\n");
+    sb.append("total_keys:").append(storage.size()).append("\r\n");
+    sb.append("# Persistence\r\n");
+    sb.append("aof_enabled:").append(aofWriter != null ? 1 : 0).append("\r\n");
+    return sb.toString();
   }
 }

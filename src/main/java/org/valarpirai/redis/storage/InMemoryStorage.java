@@ -67,6 +67,11 @@ public class InMemoryStorage implements IStorage {
   }
 
   @Override
+  public int size() {
+    return (int) storage.values().stream().filter(e -> !e.isExpired()).count();
+  }
+
+  @Override
   public int cleanExpired() {
     int[] count = {0};
     storage

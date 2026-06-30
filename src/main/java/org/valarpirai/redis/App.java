@@ -10,12 +10,14 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.valarpirai.redis.command.CommandExecutor;
 import org.valarpirai.redis.protocol.RespDecoder;
 import org.valarpirai.redis.server.ClientHandler;
+import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.ExpiryCleanerWorker;
 import org.valarpirai.redis.storage.InMemoryStorage;
@@ -27,31 +29,35 @@ public class App {
 
   public static void main(String[] args) throws IOException {
     int port = getEnvInt("PORT", 6379);
-    int poolSize = getEnvInt("POOL_SIZE", 5);
+    int maxClients = getEnvInt("POOL_SIZE", 100);
     long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 1000);
     String aofPath = System.getenv("AOF_FILE");
+    boolean aofEnabled = aofPath != null && !aofPath.isBlank();
 
-    log.info("Starting Redis server on port {} (pool={})", port, poolSize);
+    log.info("=== Redis Server Configuration ===");
+    log.info("  port            : {}", port);
+    log.info("  max_clients     : {}", maxClients);
+    log.info("  threads         : virtual");
+    log.info("  aof_enabled     : {}", aofEnabled);
+    if (aofEnabled) log.info("  aof_file        : {}", aofPath);
+    log.info("  clean_interval  : {}ms", cleanIntervalMs);
+    log.info("==================================");
 
     var storage = new InMemoryStorage();
 
-    if (aofPath != null && !aofPath.isBlank()) {
+    if (aofEnabled) {
       replayAof(aofPath, storage);
     }
 
-    AofWriter aofWriter = null;
-    if (aofPath != null && !aofPath.isBlank()) {
-      aofWriter = new AofWriter(aofPath);
-    }
-
-    var commandExecutor = new CommandExecutor(storage, aofWriter);
+    AofWriter aofWriter = aofEnabled ? new AofWriter(aofPath) : null;
+    var serverStats = new ServerStats();
+    var commandExecutor = new CommandExecutor(storage, aofWriter, serverStats);
 
     var cleaner = new ExpiryCleanerWorker(storage, cleanIntervalMs);
     cleaner.start();
 
-    ExecutorService threadPool =
-        Executors.newFixedThreadPool(
-            poolSize, Thread.ofPlatform().name("client-handler-", 0).factory());
+    var semaphore = new Semaphore(maxClients);
+    ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
 
     final AofWriter writerRef = aofWriter;
     try (ServerSocket serverSocket = new ServerSocket(port)) {
@@ -91,9 +97,26 @@ public class App {
       while (!serverSocket.isClosed()) {
         try {
           Socket clientSocket = serverSocket.accept();
-          clientSocket.setSoTimeout(IDLE_TIMEOUT_MS);
           log.info("Client connected: {}", clientSocket.getInetAddress());
-          threadPool.submit(new ClientHandler(clientSocket, commandExecutor));
+          threadPool.submit(
+              () -> {
+                if (!semaphore.tryAcquire()) {
+                  log.warn("Max clients ({}) reached, rejecting connection", maxClients);
+                  try {
+                    clientSocket.close();
+                  } catch (IOException ignored) {
+                  }
+                  return;
+                }
+                try {
+                  clientSocket.setSoTimeout(IDLE_TIMEOUT_MS);
+                  new ClientHandler(clientSocket, commandExecutor, serverStats).run();
+                } catch (IOException e) {
+                  log.error("Socket setup error: {}", e.getMessage());
+                } finally {
+                  semaphore.release();
+                }
+              });
         } catch (IOException e) {
           if (!serverSocket.isClosed()) {
             log.error("Accept error: {}", e.getMessage());

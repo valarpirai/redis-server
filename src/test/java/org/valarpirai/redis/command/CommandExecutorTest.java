@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.InMemoryStorage;
 
@@ -219,5 +220,34 @@ class CommandExecutorTest {
     }
     String content = Files.readString(aofFile);
     assertTrue(content.contains("EXPIREAT"));
+  }
+
+  @Test
+  void statsCommandReturnsBulkString() {
+    var stats = new ServerStats();
+    var exec = new CommandExecutor(new InMemoryStorage(), null, stats);
+    exec.execute("SET a 1");
+    exec.execute("SET b 2");
+    String result = exec.execute("STATS");
+    assertTrue(result.contains("total_commands_processed:3"));
+    assertTrue(result.contains("total_keys:2"));
+    assertTrue(result.contains("aof_enabled:0"));
+  }
+
+  @Test
+  void statsCommandCountsCommands() {
+    var stats = new ServerStats();
+    var exec = new CommandExecutor(new InMemoryStorage(), null, stats);
+    exec.execute("PING");
+    exec.execute("PING");
+    String result = exec.execute("STATS");
+    assertTrue(result.contains("total_commands_processed:3"));
+  }
+
+  @Test
+  void statsCommandWithoutStatsObjectStillReturns() {
+    String result = executor.execute("STATS");
+    assertTrue(result.contains("uptime_seconds:"));
+    assertTrue(result.contains("total_keys:"));
   }
 }

@@ -157,4 +157,25 @@ class InMemoryStorageTest {
   void cleanExpiredReturnsZeroWhenEmpty() {
     assertEquals(0, storage.cleanExpired());
   }
+
+  @Test
+  void sizeReturnsLiveKeyCount() {
+    storage.set("a", "1");
+    storage.set("b", "2");
+    assertEquals(2, storage.size());
+  }
+
+  @Test
+  void sizeExcludesExpiredKeys() throws InterruptedException {
+    storage.set("a", "1");
+    storage.set("b", "2");
+    storage.expire("a", 0);
+    Thread.sleep(10);
+    assertEquals(1, storage.size());
+  }
+
+  @Test
+  void sizeIsZeroWhenEmpty() {
+    assertEquals(0, storage.size());
+  }
 }

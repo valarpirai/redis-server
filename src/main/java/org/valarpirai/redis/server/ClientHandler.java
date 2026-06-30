@@ -19,14 +19,21 @@ public class ClientHandler implements Runnable {
 
   private final Socket socket;
   private final CommandExecutor commandExecutor;
+  private final ServerStats stats;
 
   public ClientHandler(Socket socket, CommandExecutor commandExecutor) {
+    this(socket, commandExecutor, null);
+  }
+
+  public ClientHandler(Socket socket, CommandExecutor commandExecutor, ServerStats stats) {
     this.socket = socket;
     this.commandExecutor = commandExecutor;
+    this.stats = stats;
   }
 
   @Override
   public void run() {
+    if (stats != null) stats.clientConnected();
     try (BufferedReader in =
             new BufferedReader(
                 new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
@@ -41,6 +48,7 @@ public class ClientHandler implements Runnable {
     } catch (IOException e) {
       log.error("Client handler error: {}", e.getMessage());
     } finally {
+      if (stats != null) stats.clientDisconnected();
       try {
         socket.close();
         log.info("Client disconnected: {}", socket.getInetAddress());

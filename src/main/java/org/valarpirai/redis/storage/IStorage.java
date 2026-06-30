@@ -22,4 +22,7 @@ public interface IStorage {
 
   /** Removes all expired keys. Returns the number of keys evicted. */
   int cleanExpired();
+
+  /** Returns the number of live (non-expired) keys. */
+  int size();
 }
