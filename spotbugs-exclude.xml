@@ -1,0 +1,13 @@
+<FindBugsFilter>
+  <!--
+    Socket and IStorage are intentionally stored via constructor injection.
+    Defensive copying would break the server's connection handling.
+  -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Or>
+      <Class name="org.valarpirai.redis.ClientHandler"/>
+      <Class name="org.valarpirai.redis.CommandExecutor"/>
+    </Or>
+  </Match>
+</FindBugsFilter>

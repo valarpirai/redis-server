@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 public class ClientHandler implements Runnable {
 
@@ -18,13 +19,15 @@ public class ClientHandler implements Runnable {
 
   @Override
   public void run() {
-    try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+    try (BufferedReader in =
+            new BufferedReader(
+                new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
         OutputStream out = socket.getOutputStream()) {
 
       String[] tokens;
       while ((tokens = RespDecoder.decode(in)) != null) {
         CommandResult result = commandExecutor.executeCommand(tokens);
-        out.write(RespEncoder.encode(result).getBytes());
+        out.write(RespEncoder.encode(result).getBytes(StandardCharsets.UTF_8));
         out.flush();
       }
     } catch (IOException e) {
