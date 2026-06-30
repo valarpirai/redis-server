@@ -1,13 +1,8 @@
 package org.valarpirai.redis;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
@@ -15,9 +10,9 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.valarpirai.redis.command.CommandExecutor;
-import org.valarpirai.redis.protocol.RespDecoder;
 import org.valarpirai.redis.server.ClientHandler;
 import org.valarpirai.redis.server.ServerStats;
+import org.valarpirai.redis.storage.AofLoader;
 import org.valarpirai.redis.storage.AofWriter;
 import org.valarpirai.redis.storage.ExpiryCleanerWorker;
 import org.valarpirai.redis.storage.InMemoryStorage;
@@ -32,7 +27,7 @@ public class App {
     config.log(log);
 
     var storage = new InMemoryStorage();
-    if (config.aofEnabled()) replayAof(config.aofFile(), storage);
+    if (config.aofEnabled()) AofLoader.replay(config.aofFile(), storage);
 
     AofWriter aofWriter =
         config.aofEnabled() ? new AofWriter(config.aofFile(), config.fsyncPolicy()) : null;
@@ -121,25 +116,5 @@ public class App {
       Thread.currentThread().interrupt();
     }
     log.info("Server stopped.");
-  }
-
-  private static void replayAof(String aofPath, InMemoryStorage storage) {
-    File file = new File(aofPath);
-    if (!file.exists()) return;
-
-    var replayExecutor = new CommandExecutor(storage);
-    int loaded = 0;
-    try (var reader =
-        new BufferedReader(
-            new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-      String[] tokens;
-      while ((tokens = RespDecoder.decode(reader)) != null) {
-        replayExecutor.executeCommand(tokens);
-        loaded++;
-      }
-      log.info("AOF replay: loaded {} commands from {}", loaded, aofPath);
-    } catch (IOException e) {
-      log.error("AOF replay failed: {}", e.getMessage());
-    }
   }
 }
