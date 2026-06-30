@@ -19,9 +19,7 @@ import org.valarpirai.redis.protocol.RespDecoder;
 import org.valarpirai.redis.server.ClientHandler;
 import org.valarpirai.redis.server.ServerStats;
 import org.valarpirai.redis.storage.AofWriter;
-import org.valarpirai.redis.storage.EvictionPolicy;
 import org.valarpirai.redis.storage.ExpiryCleanerWorker;
-import org.valarpirai.redis.storage.FsyncPolicy;
 import org.valarpirai.redis.storage.InMemoryStorage;
 
 public class App {
@@ -30,79 +28,30 @@ public class App {
   private static final int IDLE_TIMEOUT_MS = 30_000;
 
   public static void main(String[] args) throws IOException {
-    int port = getEnvInt("PORT", 6379);
-    int maxClients = getEnvInt("POOL_SIZE", 1000);
-    long cleanIntervalMs = getEnvLong("CLEAN_INTERVAL_MS", 10_000);
-    long maxMemoryMb = getEnvLong("MAX_MEMORY_MB", 0);
-    long maxMemoryBytes = maxMemoryMb * 1024 * 1024;
-    EvictionPolicy evictionPolicy = EvictionPolicy.from(System.getenv("EVICTION_POLICY"));
-    String aofPath = System.getenv("AOF_FILE");
-    boolean aofEnabled = aofPath != null && !aofPath.isBlank();
-    FsyncPolicy fsyncPolicy = FsyncPolicy.from(System.getenv("AOF_FSYNC"));
-
-    log.info("=== Redis Server Configuration ===");
-    log.info("  port            : {}", port);
-    log.info("  max_clients     : {}", maxClients);
-    log.info("  threads         : virtual");
-    log.info("  max_memory      : {}", maxMemoryMb == 0 ? "unlimited" : maxMemoryMb + " MB");
-    log.info("  eviction_policy : {}", evictionPolicy.label());
-    log.info("  aof_enabled     : {}", aofEnabled);
-    if (aofEnabled) {
-      log.info("  aof_file        : {}", aofPath);
-      log.info("  aof_fsync       : {}", fsyncPolicy.name().toLowerCase());
-    }
-    log.info("  clean_interval  : {}ms", cleanIntervalMs);
-    log.info("==================================");
+    Config config = Config.fromEnv();
+    config.log(log);
 
     var storage = new InMemoryStorage();
+    if (config.aofEnabled()) replayAof(config.aofFile(), storage);
 
-    if (aofEnabled) {
-      replayAof(aofPath, storage);
-    }
-
-    AofWriter aofWriter = aofEnabled ? new AofWriter(aofPath, fsyncPolicy) : null;
+    AofWriter aofWriter =
+        config.aofEnabled() ? new AofWriter(config.aofFile(), config.fsyncPolicy()) : null;
     var serverStats = new ServerStats();
     var commandExecutor =
-        new CommandExecutor(storage, aofWriter, serverStats, maxMemoryBytes, evictionPolicy);
+        new CommandExecutor(
+            storage, aofWriter, serverStats, config.maxMemoryBytes(), config.evictionPolicy());
 
-    var cleaner = new ExpiryCleanerWorker(storage, cleanIntervalMs);
+    var cleaner = new ExpiryCleanerWorker(storage, config.cleanIntervalMs());
     cleaner.start();
 
-    var semaphore = new Semaphore(maxClients);
+    var semaphore = new Semaphore(config.maxClients());
     ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
 
-    final AofWriter writerRef = aofWriter;
-    try (ServerSocket serverSocket = new ServerSocket(port, 1024)) {
+    try (ServerSocket serverSocket = new ServerSocket(config.port(), 1024)) {
       Runtime.getRuntime()
           .addShutdownHook(
               new Thread(
-                  () -> {
-                    log.info("Shutting down...");
-                    try {
-                      serverSocket.close();
-                    } catch (IOException e) {
-                      log.error("Error closing server socket: {}", e.getMessage());
-                    }
-                    cleaner.shutdown();
-                    if (writerRef != null) {
-                      try {
-                        writerRef.close();
-                      } catch (IOException e) {
-                        log.error("Error closing AOF writer: {}", e.getMessage());
-                      }
-                    }
-                    threadPool.shutdown();
-                    try {
-                      if (!threadPool.awaitTermination(30, TimeUnit.SECONDS)) {
-                        threadPool.shutdownNow();
-                      }
-                    } catch (InterruptedException e) {
-                      threadPool.shutdownNow();
-                      Thread.currentThread().interrupt();
-                    }
-                    log.info("Server stopped.");
-                  },
-                  "shutdown-hook"));
+                  () -> shutdown(serverSocket, cleaner, aofWriter, threadPool), "shutdown-hook"));
 
       log.info("Waiting for clients...");
 
@@ -111,33 +60,67 @@ public class App {
           Socket clientSocket = serverSocket.accept();
           log.info("Client connected: {}", clientSocket.getInetAddress());
           threadPool.submit(
-              () -> {
-                if (!semaphore.tryAcquire()) {
-                  log.warn("Max clients ({}) reached, rejecting connection", maxClients);
-                  try {
-                    clientSocket.close();
-                  } catch (IOException ignored) {
-                  }
-                  return;
-                }
-                try {
-                  clientSocket.setSoTimeout(IDLE_TIMEOUT_MS);
-                  new ClientHandler(clientSocket, commandExecutor, serverStats).run();
-                } catch (IOException e) {
-                  log.error("Socket setup error: {}", e.getMessage());
-                } finally {
-                  semaphore.release();
-                }
-              });
+              () -> handleClient(clientSocket, semaphore, config, commandExecutor, serverStats));
         } catch (IOException e) {
-          if (!serverSocket.isClosed()) {
-            log.error("Accept error: {}", e.getMessage());
-          }
+          if (!serverSocket.isClosed()) log.error("Accept error: {}", e.getMessage());
         }
       }
     } finally {
       threadPool.shutdown();
     }
+  }
+
+  private static void handleClient(
+      Socket socket,
+      Semaphore semaphore,
+      Config config,
+      CommandExecutor executor,
+      ServerStats stats) {
+    if (!semaphore.tryAcquire()) {
+      log.warn("Max clients ({}) reached, rejecting connection", config.maxClients());
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+      }
+      return;
+    }
+    try {
+      socket.setSoTimeout(IDLE_TIMEOUT_MS);
+      new ClientHandler(socket, executor, stats).run();
+    } catch (IOException e) {
+      log.error("Socket setup error: {}", e.getMessage());
+    } finally {
+      semaphore.release();
+    }
+  }
+
+  private static void shutdown(
+      ServerSocket serverSocket,
+      ExpiryCleanerWorker cleaner,
+      AofWriter aofWriter,
+      ExecutorService threadPool) {
+    log.info("Shutting down...");
+    try {
+      serverSocket.close();
+    } catch (IOException e) {
+      log.error("Error closing server socket: {}", e.getMessage());
+    }
+    cleaner.shutdown();
+    if (aofWriter != null) {
+      try {
+        aofWriter.close();
+      } catch (IOException e) {
+        log.error("Error closing AOF writer: {}", e.getMessage());
+      }
+    }
+    threadPool.shutdown();
+    try {
+      if (!threadPool.awaitTermination(30, TimeUnit.SECONDS)) threadPool.shutdownNow();
+    } catch (InterruptedException e) {
+      threadPool.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
+    log.info("Server stopped.");
   }
 
   private static void replayAof(String aofPath, InMemoryStorage storage) {
@@ -157,26 +140,6 @@ public class App {
       log.info("AOF replay: loaded {} commands from {}", loaded, aofPath);
     } catch (IOException e) {
       log.error("AOF replay failed: {}", e.getMessage());
-    }
-  }
-
-  static int getEnvInt(String name, int defaultValue) {
-    String value = System.getenv(name);
-    if (value == null) return defaultValue;
-    try {
-      return Integer.parseInt(value);
-    } catch (NumberFormatException e) {
-      return defaultValue;
-    }
-  }
-
-  static long getEnvLong(String name, long defaultValue) {
-    String value = System.getenv(name);
-    if (value == null) return defaultValue;
-    try {
-      return Long.parseLong(value);
-    } catch (NumberFormatException e) {
-      return defaultValue;
     }
   }
 }
