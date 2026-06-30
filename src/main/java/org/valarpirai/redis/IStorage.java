@@ -1,7 +1,9 @@
 package org.valarpirai.redis;
 
+import java.util.Optional;
+
 public interface IStorage {
-  String get(String key);
+  Optional<String> get(String key);
 
   void set(String key, String value);
 

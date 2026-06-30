@@ -1,5 +1,6 @@
 package org.valarpirai.redis;
 
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryStorage implements IStorage {
@@ -13,14 +14,14 @@ public class InMemoryStorage implements IStorage {
   private final ConcurrentHashMap<String, Entry> storage = new ConcurrentHashMap<>();
 
   @Override
-  public String get(String key) {
+  public Optional<String> get(String key) {
     Entry entry = storage.get(key);
-    if (entry == null) return null;
+    if (entry == null) return Optional.empty();
     if (entry.isExpired()) {
       storage.remove(key);
-      return null;
+      return Optional.empty();
     }
-    return entry.value();
+    return Optional.of(entry.value());
   }
 
   @Override
@@ -36,7 +37,7 @@ public class InMemoryStorage implements IStorage {
 
   @Override
   public boolean exists(String key) {
-    return get(key) != null;
+    return get(key).isPresent();
   }
 
   @Override

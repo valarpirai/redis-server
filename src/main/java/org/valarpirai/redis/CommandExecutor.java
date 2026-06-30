@@ -25,8 +25,7 @@ public class CommandExecutor {
         {
           if (tokens.length != 2)
             return CommandResult.error("-ERR wrong number of arguments for 'GET'");
-          String value = storage.get(tokens[1]);
-          return value != null ? CommandResult.bulk(value) : CommandResult.nil();
+          return storage.get(tokens[1]).map(CommandResult::bulk).orElseGet(CommandResult::nil);
         }
 
       case "SET":

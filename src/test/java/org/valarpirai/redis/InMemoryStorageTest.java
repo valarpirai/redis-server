@@ -15,21 +15,21 @@ class InMemoryStorageTest {
   }
 
   @Test
-  void getReturnsNullForMissingKey() {
-    assertNull(storage.get("missing"));
+  void getReturnsEmptyForMissingKey() {
+    assertTrue(storage.get("missing").isEmpty());
   }
 
   @Test
   void setAndGet() {
     storage.set("key", "value");
-    assertEquals("value", storage.get("key"));
+    assertEquals("value", storage.get("key").orElseThrow());
   }
 
   @Test
   void setOverwritesExistingKey() {
     storage.set("key", "first");
     storage.set("key", "second");
-    assertEquals("second", storage.get("key"));
+    assertEquals("second", storage.get("key").orElseThrow());
   }
 
   @Test
@@ -47,7 +47,7 @@ class InMemoryStorageTest {
   void deleteRemovesKey() {
     storage.set("key", "value");
     storage.delete("key");
-    assertNull(storage.get("key"));
+    assertTrue(storage.get("key").isEmpty());
   }
 
   @Test
@@ -103,7 +103,7 @@ class InMemoryStorageTest {
     storage.set("key", "value");
     storage.expire("key", 0);
     Thread.sleep(10);
-    assertNull(storage.get("key"));
+    assertTrue(storage.get("key").isEmpty());
   }
 
   @Test
