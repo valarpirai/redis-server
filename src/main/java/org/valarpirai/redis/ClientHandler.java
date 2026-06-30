@@ -6,8 +6,12 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ClientHandler implements Runnable {
+
+  private static final Logger log = LoggerFactory.getLogger(ClientHandler.class);
 
   private final Socket socket;
   private final CommandExecutor commandExecutor;
@@ -31,13 +35,13 @@ public class ClientHandler implements Runnable {
         out.flush();
       }
     } catch (IOException e) {
-      System.err.println("Client handler error: " + e.getMessage());
+      log.error("Client handler error: {}", e.getMessage());
     } finally {
       try {
         socket.close();
-        System.out.println("Client disconnected: " + socket.getInetAddress());
+        log.info("Client disconnected: {}", socket.getInetAddress());
       } catch (IOException e) {
-        e.printStackTrace();
+        log.error("Error closing socket: {}", e.getMessage());
       }
     }
   }

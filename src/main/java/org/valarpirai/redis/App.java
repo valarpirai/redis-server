@@ -6,16 +6,19 @@ import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class App {
 
+  private static final Logger log = LoggerFactory.getLogger(App.class);
   private static final int IDLE_TIMEOUT_MS = 30_000;
 
   public static void main(String[] args) {
     int port = getEnvInt("PORT", 6379);
     int poolSize = getEnvInt("POOL_SIZE", 5);
 
-    System.out.println("Starting Redis server on port " + port + " (pool=" + poolSize + ")");
+    log.info("Starting Redis server on port {} (pool={})", port, poolSize);
 
     ExecutorService executor =
         Executors.newFixedThreadPool(
@@ -28,11 +31,11 @@ public class App {
           .addShutdownHook(
               new Thread(
                   () -> {
-                    System.out.println("Shutting down...");
+                    log.info("Shutting down...");
                     try {
                       serverSocket.close();
                     } catch (IOException e) {
-                      System.err.println("Error closing server socket: " + e.getMessage());
+                      log.error("Error closing server socket: {}", e.getMessage());
                     }
                     executor.shutdown();
                     try {
@@ -43,26 +46,26 @@ public class App {
                       executor.shutdownNow();
                       Thread.currentThread().interrupt();
                     }
-                    System.out.println("Server stopped.");
+                    log.info("Server stopped.");
                   },
                   "shutdown-hook"));
 
-      System.out.println("Waiting for clients...");
+      log.info("Waiting for clients...");
 
       while (!serverSocket.isClosed()) {
         try {
           Socket clientSocket = serverSocket.accept();
           clientSocket.setSoTimeout(IDLE_TIMEOUT_MS);
-          System.out.println("Client connected: " + clientSocket.getInetAddress());
+          log.info("Client connected: {}", clientSocket.getInetAddress());
           executor.submit(new ClientHandler(clientSocket, commandExecutor));
         } catch (IOException e) {
           if (!serverSocket.isClosed()) {
-            System.err.println("Accept error: " + e.getMessage());
+            log.error("Accept error: {}", e.getMessage());
           }
         }
       }
     } catch (IOException e) {
-      System.err.println("Failed to start server: " + e.getMessage());
+      log.error("Failed to start server: {}", e.getMessage());
     } finally {
       executor.shutdown();
     }
