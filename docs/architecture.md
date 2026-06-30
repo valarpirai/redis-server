@@ -2,224 +2,181 @@
 
 ## Overview
 
-A TCP server that mimics a subset of Redis. Clients connect over a socket, send text commands, and receive text responses. The server is single-process, multi-threaded, and stateless across connections. All data lives in memory.
+A TCP server that implements a subset of Redis. Clients connect over a socket, send RESP2 commands, and receive RESP2 responses. The server is single-process, multi-threaded, and stateless across connections. All data lives in memory with optional per-key TTL.
 
 **Runtime:** Java 21  
 **Build:** Maven  
 **Port:** 6379 (default), overridable via `PORT` env var  
-**Protocol:** Plain text (current) → RESP2 (Phase 2)
+**Pool size:** 5 (default), overridable via `POOL_SIZE` env var  
+**Protocol:** RESP2  
 
 ---
 
 ## Component Map
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                        App                          │
-│  ServerSocket + ExecutorService (fixed pool = 5)    │
-└────────────────────┬────────────────────────────────┘
-                     │ accept() → submit()
-          ┌──────────▼──────────┐
-          │    ClientHandler    │  (one per connection)
-          │  reads / writes     │
-          │  socket I/O         │
-          └──────────┬──────────┘
-                     │ execute(line)
-          ┌──────────▼──────────┐
-          │  CommandExecutor    │  (shared, stateless)
-          │  parse + dispatch   │
-          └──────────┬──────────┘
-                     │ get / set
-          ┌──────────▼──────────┐
-          │     IStorage        │  (interface)
-          └──────────┬──────────┘
-                     │
-          ┌──────────▼──────────┐
-          │  InMemoryStorage    │
-          │  ConcurrentHashMap  │
-          └─────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                           App                            │
+│  ServerSocket + ExecutorService + ShutdownHook           │
+└──────────────────────┬───────────────────────────────────┘
+                       │ accept() → setSoTimeout → submit()
+            ┌──────────▼──────────┐
+            │    ClientHandler    │  (one per connection, pooled)
+            │                     │
+            │  RespDecoder        │  → String[] tokens
+            │  CommandExecutor    │  → CommandResult
+            │  RespEncoder        │  → RESP2 bytes → OutputStream
+            └──────────┬──────────┘
+                       │ executeCommand(String[])
+            ┌──────────▼──────────┐
+            │  CommandExecutor    │  (shared, stateless)
+            │  returns CommandResult
+            └──────────┬──────────┘
+                       │ get / set / delete / exists / expire / ttl
+            ┌──────────▼──────────┐
+            │     IStorage        │  (interface)
+            └──────────┬──────────┘
+                       │
+            ┌──────────▼──────────┐
+            │  InMemoryStorage    │
+            │  ConcurrentHashMap  │
+            │  <String, Entry>    │
+            └─────────────────────┘
 ```
 
 ---
 
 ## Threading Model
 
-`App` creates a fixed thread pool of 5 platform threads via `Thread.ofPlatform().name("client-handler-", 0).factory()`. Each accepted connection is submitted as a `ClientHandler` `Runnable` to the pool.
+`App` creates a fixed thread pool of N platform threads (default 5, configurable via `POOL_SIZE`) using `Thread.ofPlatform().name("client-handler-", 0).factory()`. Each accepted connection is submitted as a `ClientHandler` `Runnable`.
 
 ```
-main thread      pool thread 0     pool thread 1     pool thread N
-    │                │                  │                  │
-accept()         run()             run()              run()
-    │            readLine()        readLine()         readLine()
-submit() ──────► execute()         execute()          execute()
-accept()         writeLine()       writeLine()        writeLine()
-    │            loop              loop               loop
+main thread        pool thread 0        pool thread 1
+    │                   │                    │
+accept()            run()                run()
+setSoTimeout()      RespDecoder.decode() RespDecoder.decode()
+submit() ─────────► executeCommand()     executeCommand()
+accept()            RespEncoder.encode() RespEncoder.encode()
+    │               write bytes          write bytes
+    │               loop                 loop
 ```
 
-**Concurrency contract:**  
-- `CommandExecutor` is shared across all pool threads. It holds no mutable state — safe.  
-- `InMemoryStorage` is shared across all pool threads. `ConcurrentHashMap` handles concurrent reads and writes without external locking.  
-- Each `ClientHandler` owns its own `Socket`, `BufferedReader`, and `PrintWriter`. No sharing.
-
-**Limitation (current):** Pool is hardcoded to 5. A sixth concurrent client blocks in `accept()` until a thread frees. No backpressure or rejection policy.
+**Concurrency contract:**
+- `CommandExecutor` is shared across all pool threads. It holds no mutable state — safe.
+- `InMemoryStorage` is shared across all pool threads. `ConcurrentHashMap` handles concurrent reads and writes without external locking.
+- Each `ClientHandler` owns its own `Socket`, `BufferedReader`, and `OutputStream`. No sharing.
+- Idle clients are evicted after 30 s via `socket.setSoTimeout(30_000)`.
 
 ---
 
 ## Request Lifecycle
 
 ```
-Client                  ClientHandler           CommandExecutor        InMemoryStorage
-  │                          │                        │                      │
-  │── "SET foo bar\n" ──────►│                        │                      │
-  │                          │── execute("SET foo bar")►                     │
-  │                          │                        │── set("foo","bar") ──►│
-  │                          │                        │◄─ "1" ───────────────│
-  │                          │◄─ "1" ─────────────────│                      │
-  │◄─ "1\n" ────────────────│                        │                      │
+Client                  ClientHandler              CommandExecutor      InMemoryStorage
+  │                          │                           │                    │
+  │── RESP array ───────────►│                           │                    │
+  │  *3\r\n$3\r\nSET\r\n    │── RespDecoder.decode() ──►│                   │
+  │  $3\r\nfoo\r\n           │   → ["SET","foo","bar"]   │                    │
+  │  $3\r\nbar\r\n           │── executeCommand(tokens) ─►                   │
+  │                          │                           │── set("foo","bar")►│
+  │                          │                           │◄─ void ────────────│
+  │                          │◄─ CommandResult.ok() ─────│                    │
+  │                          │── RespEncoder.encode() ───│                    │
+  │◄─ +OK\r\n ──────────────│                           │                    │
 ```
-
-`ClientHandler.run()` loops on `readLine()`. Each line is passed as-is to `CommandExecutor.execute()`. The response is written back with `println()`. The loop exits when the client closes the connection or sends `bye`.
 
 ---
 
-## Protocol (Current — Plain Text)
+## Protocol — RESP2
 
-No framing. Each command is one newline-terminated line. Tokens are split on a single space. The server responds with one line per command.
+Commands arrive as RESP arrays. The server responds with typed RESP values.
 
-| Command | Request | Response |
-|---------|---------|----------|
-| PING | `PING` | `PONG` |
-| SET | `SET key value` | `1` |
-| GET (hit) | `GET key` | `value` |
-| GET (miss) | `GET key` | `null` |
-| Unknown | anything else | `ERROR` |
+**Wire format:**
 
-**Known defects (plain-text protocol):**
-- Multi-word values (`SET key hello world`) silently drop tokens after the third.
-- Commands are case-sensitive. `get` fails; `GET` works.
-- Missing args throw `ArrayIndexOutOfBoundsException` instead of returning an error.
-- `null` and `ERROR` are not Redis-compliant responses.
+```
+Simple string:  +OK\r\n
+Error:          -ERR message\r\n
+Integer:        :1\r\n
+Bulk string:    $5\r\nhello\r\n
+Null bulk:      $-1\r\n
+Array (in):     *3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+```
+
+**`RespDecoder`** reads one frame from `BufferedReader`. If the first line starts with `*`, it reads a RESP array. Otherwise it falls back to plain-text line splitting — this allows `nc`/telnet clients to work without RESP framing.
+
+**`CommandResult`** is a typed record that carries the value and its RESP kind:
+
+| Kind | Used for | Wire |
+|------|----------|------|
+| SIMPLE_STRING | PONG, OK | `+value\r\n` |
+| BULK_STRING | GET hit | `$len\r\nvalue\r\n` |
+| INTEGER | DEL, EXISTS, EXPIRE, TTL | `:n\r\n` |
+| ERROR | bad args, unknown cmd | `-ERR msg\r\n` |
+| NIL | GET miss | `$-1\r\n` |
+
+**`RespEncoder`** takes a `CommandResult` and returns the encoded string. It never guesses the type from the value string.
+
+**Command table:**
+
+| Command | Args | Response kind |
+|---------|------|---------------|
+| PING | — | SIMPLE_STRING |
+| SET key value | ≥3 tokens | SIMPLE_STRING (OK) |
+| GET key | 2 tokens | BULK_STRING or NIL |
+| DEL key | 2 tokens | INTEGER (1 or 0) |
+| EXISTS key | 2 tokens | INTEGER (1 or 0) |
+| EXPIRE key seconds | 3 tokens | INTEGER (1 or 0) |
+| TTL key | 2 tokens | INTEGER (-1, -2, or seconds) |
+
+Commands are case-insensitive. Multi-word values in SET are joined with a space.
 
 ---
 
 ## Storage Layer
 
-`IStorage` is the boundary. `CommandExecutor` depends on the interface, not the implementation.
+`IStorage` is the boundary. `CommandExecutor` depends on the interface only.
 
 ```java
 public interface IStorage {
     String get(String key);
-    String set(String key, String value);
+    void set(String key, String value);
+    boolean delete(String key);
+    boolean exists(String key);
+    boolean expire(String key, long seconds);
+    long ttl(String key);   // -1 = no expiry, -2 = key missing
 }
 ```
 
-`InMemoryStorage` backs it with a `ConcurrentHashMap<String, String>`. All values are stored as strings. There is no TTL, no type system, no persistence.
+`InMemoryStorage` stores `ConcurrentHashMap<String, Entry>`. `Entry` is a private record holding the value and `expiresAt` (`-1` = no expiry). Expiry is **lazy**: checked on every `get`, `exists`, and `delete`. Stale entries linger in memory until next access.
+
+Active eviction (background sweep) is not implemented. Add it if memory pressure becomes a concern — use `ConcurrentHashMap.entrySet().removeIf()` on a daemon thread.
 
 ---
 
-## Future Architecture
-
-### Phase 1 — Command Correctness `[PENDING]`
-
-Fix the existing command layer before adding new commands. No structural changes. All fixes are inside `CommandExecutor` and `InMemoryStorage`.
-
-- Case-insensitive dispatch: normalise `commands[0]` with `toUpperCase()` before the `switch`.
-- Arg validation: check `commands.length` before accessing indices; return `-ERR wrong number of arguments` on mismatch.
-- Correct responses: `SET` returns `+OK`, missing key returns `$-1` (nil bulk), unknown command returns `-ERR unknown command 'x'`.
-- Extend `IStorage`: add `delete(String key) → boolean` and `exists(String key) → boolean`.
-- Implement `DEL` and `EXISTS` commands in `CommandExecutor`.
-
-No changes to `ClientHandler`, `App`, or the socket layer.
-
----
-
-### Phase 2 — RESP2 Protocol `[PENDING]`
-
-Redis Serialization Protocol (RESP2) is required for `redis-cli` and any Redis client library to work correctly. This is a breaking change to the socket layer only — `CommandExecutor` and `IStorage` are unaffected.
-
-**RESP2 wire format:**
-
-```
-Simple string:  +OK\r\n
-Error:          -ERR message\r\n
-Integer:        :1000\r\n
-Bulk string:    $6\r\nfoobar\r\n
-Null bulk:      $-1\r\n
-Array:          *2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n
-```
-
-**What changes:**
-
-`ClientHandler` must buffer bytes and frame RESP arrays instead of reading plain lines. A command arrives as a RESP array (`*N\r\n` followed by N bulk strings). The parsed tokens are joined into a space-separated string and passed to `CommandExecutor`, or `CommandExecutor.execute()` is refactored to accept `String[]` directly (preferred — avoids the re-split).
-
-`CommandExecutor` response strings must be replaced with RESP-encoded values. Introduce a `RespEncoder` utility:
-
-```
-CommandExecutor
-      │
-      ├── parse tokens from String[]
-      ├── dispatch to IStorage
-      └── encode result via RespEncoder → write to PrintWriter
-```
-
-New class: `RespDecoder` — reads from `InputStream`, returns `String[]` of tokens per command.  
-New class: `RespEncoder` — static methods that return RESP-encoded strings.
-
-```
-┌──────────────────────────────────────────┐
-│              ClientHandler               │
-│                                          │
-│  RespDecoder.read(inputStream)           │
-│       → String[] tokens                  │
-│                                          │
-│  CommandExecutor.execute(String[])       │
-│       → String result                    │
-│                                          │
-│  RespEncoder.encode(result)              │
-│       → write to outputStream            │
-└──────────────────────────────────────────┘
-```
-
----
-
-### Phase 3 — TTL and Expiry `[PENDING]`
-
-`EXPIRE <key> <seconds>` sets a time-to-live on a key. `TTL <key>` returns seconds remaining. Keys past their TTL are invisible to `GET`, `EXISTS`, and `DEL`.
-
-**Storage change:**  
-`InMemoryStorage` stores `ConcurrentHashMap<String, Entry>` where `Entry` holds the value and an optional expiry timestamp. `IStorage` gains two new methods:
-
-```java
-boolean expire(String key, long seconds);
-long ttl(String key);          // -1 = no expiry, -2 = key missing
-```
-
-**Expiry enforcement — two strategies:**
-
-| Strategy | How | Trade-off |
-|----------|-----|-----------|
-| Lazy | Check expiry on every `get` / `exists` | Simple; stale keys linger in memory |
-| Active | Background thread scans and evicts | Bounded memory; adds concurrency complexity |
-
-Start with lazy. Add active eviction only if memory becomes a concern.
-
-**Active eviction (if added):**  
-A single daemon thread (`Thread.ofPlatform().daemon(true)`) wakes every N seconds, iterates the map, removes expired entries. Use `ConcurrentHashMap.entrySet().removeIf()` — safe under concurrent reads.
-
----
-
-### Phase 4 — Lifecycle and Resilience `[PENDING]`
-
-- **Shutdown hook:** `Runtime.getRuntime().addShutdownHook(thread)` signals the server to stop accepting. Calls `executorService.shutdown()` then `executorService.awaitTermination(30, SECONDS)` to drain active handlers cleanly.
-- **Idle connection timeout:** `socket.setSoTimeout(millis)` throws `SocketTimeoutException` on idle clients. `ClientHandler.run()` catches it and closes the socket, returning the thread to the pool.
-- **Configurable pool size:** Read `POOL_SIZE` env var in `App.getPort()` pattern; default 5.
+## Lifecycle
 
 ```
 SIGTERM
    │
    ▼
 ShutdownHook.run()
-   │── serverSocket.close()       (stops accept() loop)
-   │── executorService.shutdown() (no new tasks)
-   └── awaitTermination(30s)      (drain active ClientHandlers)
+   │── serverSocket.close()          (breaks accept() loop)
+   │── executor.shutdown()           (no new tasks accepted)
+   └── executor.awaitTermination(30s)
+            │
+            ├── drains active ClientHandlers
+            └── executor.shutdownNow() if timeout exceeded
 ```
+
+The accept loop guards `IOException` after `serverSocket.isClosed()` so shutdown does not log a spurious error.
+
+---
+
+## Implemented Phases
+
+| Phase | What | Status |
+|-------|------|--------|
+| 1 | Command correctness: case-insensitive, arg validation, correct responses, DEL/EXISTS | Done |
+| 2 | RESP2: RespDecoder, RespEncoder, CommandResult, ClientHandler rewrite | Done |
+| 3 | TTL: EXPIRE/TTL commands, Entry record, lazy expiry | Done |
+| 4 | Lifecycle: shutdown hook, idle timeout, configurable pool size | Done |

@@ -1,23 +1,24 @@
 # Backlog
 
 ## Protocol
-- [ ] Implement RESP protocol — required for `redis-cli` compatibility (currently plain text only)
-- [ ] Fix multi-word value handling — `SET key hello world` silently drops tokens after the third
+- [x] Implement RESP2 protocol — `RespDecoder` / `RespEncoder` / `CommandResult`
+- [x] Fix multi-word value handling — `SET key hello world` now joins all tokens
 
 ## CommandExecutor
-- [ ] Case-insensitive command matching (`get` / `GET` / `Get` should all work)
-- [ ] Validate argument count — `GET` / `SET` with missing args throws `ArrayIndexOutOfBoundsException`
-- [ ] Return `(nil)` instead of `null` for missing keys
-- [ ] Return `OK` instead of `"1"` for successful `SET`
-- [ ] Return a proper error response (e.g. `-ERR unknown command`) instead of `"ERROR"`
+- [x] Case-insensitive command matching
+- [x] Validate argument count — returns `-ERR wrong number of arguments`
+- [x] Return `(nil)` / `$-1\r\n` for missing keys
+- [x] Return `OK` for successful `SET`
+- [x] Return proper error response (`-ERR unknown command 'x'`)
 
 ## Commands
-- [ ] `DEL <key>`
-- [ ] `EXISTS <key>`
+- [x] `DEL <key>`
+- [x] `EXISTS <key>`
+- [x] `EXPIRE <key> <seconds>` / `TTL <key>`
 - [ ] `INCR / DECR <key>`
-- [ ] `EXPIRE <key> <seconds>` / `TTL <key>`
 
 ## Lifecycle
-- [ ] Add `Runtime.getRuntime().addShutdownHook` for clean teardown
-- [ ] Call `executorService.awaitTermination` after `shutdown()` to drain active handlers
-- [ ] Add idle connection timeout to prevent stalled clients holding pool threads
+- [x] `Runtime.getRuntime().addShutdownHook` for clean teardown
+- [x] `executorService.awaitTermination` after `shutdown()`
+- [x] Idle connection timeout (`socket.setSoTimeout`)
+- [x] Configurable pool size via `POOL_SIZE` env var

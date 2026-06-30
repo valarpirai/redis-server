@@ -40,27 +40,26 @@ Do not swallow exceptions silently. Log to `System.err` before discarding. Do no
 
 1. Add the method signature to `IStorage` if it needs storage access.
 2. Implement it in `InMemoryStorage`.
-3. Add the `case` branch in `CommandExecutor.execute()`.
+3. Add the `case` branch in `CommandExecutor.executeCommand(String[])`.
+4. Return the appropriate `CommandResult` factory method — do not invent string conventions.
 
 Keep `CommandExecutor` stateless. All state lives in `IStorage`.
 
 ## Testing
 
-No test framework is configured yet. When adding tests, use JUnit 5:
+JUnit 5 is configured. Tests live in `src/test/java/org/valarpirai/redis/`.
 
-```xml
-<dependency>
-    <groupId>org.junit.jupiter</groupId>
-    <artifactId>junit-jupiter</artifactId>
-    <version>5.10.2</version>
-    <scope>test</scope>
-</dependency>
+```bash
+mvn test                              # all tests
+mvn test -Dtest=CommandExecutorTest   # one class
 ```
 
-Run all tests: `mvn test`. Run one test class: `mvn test -Dtest=CommandExecutorTest`.
+**Unit tests** — test `CommandExecutor` and `InMemoryStorage` directly. Pass `new InMemoryStorage()` — no mocks needed. Do not spin up a socket.
 
-Test `CommandExecutor` directly — pass a mock or fake `IStorage`. Do not spin up a socket in unit tests.
+**Integration tests** — `IntegrationTest` starts our Java server on a random port (`new ServerSocket(0)`) in a daemon thread, opens a real `Socket`, and exchanges RESP frames. This covers the full stack: framing → decoding → execution → encoding → wire response.
 
 ## Protocol Notes
 
-The server currently speaks plain text. Each command is one newline-terminated line. When RESP is implemented, `ClientHandler` will need to buffer bytes and frame multi-line messages before passing to `CommandExecutor`. Keep framing logic in `ClientHandler`, keep command logic in `CommandExecutor`.
+The server speaks RESP2. `RespDecoder` handles framing; `RespEncoder` handles response encoding. Keep both stateless utilities. `ClientHandler` orchestrates them but owns no protocol logic itself — it only calls `decode → executeCommand → encode → write`.
+
+`RespDecoder` falls back to plain-text line splitting when input does not start with `*`. This keeps `nc`/telnet clients working. Do not remove this fallback.
