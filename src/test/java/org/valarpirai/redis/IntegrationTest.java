@@ -124,4 +124,24 @@ class IntegrationTest {
     assertEquals("$1", send("get", "x"));
     assertEquals("1", in.readLine());
   }
+
+  @Test
+  void ttlNoExpiry() throws IOException {
+    send("SET", "key", "value");
+    assertEquals(":-1", send("TTL", "key"));
+  }
+
+  @Test
+  void ttlMissingKey() throws IOException {
+    assertEquals(":-2", send("TTL", "nosuchkey"));
+  }
+
+  @Test
+  void expireAndTtl() throws IOException {
+    send("SET", "key", "value");
+    assertEquals(":1", send("EXPIRE", "key", "10"));
+    String ttlLine = send("TTL", "key");
+    int ttl = Integer.parseInt(ttlLine.substring(1));
+    assertTrue(ttl > 0 && ttl <= 10);
+  }
 }

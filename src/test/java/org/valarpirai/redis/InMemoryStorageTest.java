@@ -67,4 +67,50 @@ class InMemoryStorageTest {
     storage.delete("key");
     assertFalse(storage.exists("key"));
   }
+
+  @Test
+  void ttlReturnsMinusOneForKeyWithoutExpiry() {
+    storage.set("key", "value");
+    assertEquals(-1, storage.ttl("key"));
+  }
+
+  @Test
+  void ttlReturnsMinusTwoForMissingKey() {
+    assertEquals(-2, storage.ttl("missing"));
+  }
+
+  @Test
+  void expireReturnsFalseForMissingKey() {
+    assertFalse(storage.expire("missing", 10));
+  }
+
+  @Test
+  void expireReturnsTrueForExistingKey() {
+    storage.set("key", "value");
+    assertTrue(storage.expire("key", 10));
+  }
+
+  @Test
+  void ttlReturnRemainingSecondsAfterExpire() {
+    storage.set("key", "value");
+    storage.expire("key", 10);
+    long remaining = storage.ttl("key");
+    assertTrue(remaining > 0 && remaining <= 10);
+  }
+
+  @Test
+  void expiredKeyIsInvisibleToGet() throws InterruptedException {
+    storage.set("key", "value");
+    storage.expire("key", 0);
+    Thread.sleep(10);
+    assertNull(storage.get("key"));
+  }
+
+  @Test
+  void expiredKeyIsInvisibleToExists() throws InterruptedException {
+    storage.set("key", "value");
+    storage.expire("key", 0);
+    Thread.sleep(10);
+    assertFalse(storage.exists("key"));
+  }
 }

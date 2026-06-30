@@ -52,6 +52,25 @@ public class CommandExecutor {
           return CommandResult.integer(storage.exists(tokens[1]) ? 1 : 0);
         }
 
+      case "EXPIRE":
+        {
+          if (tokens.length != 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'EXPIRE'");
+          try {
+            long seconds = Long.parseLong(tokens[2]);
+            return CommandResult.integer(storage.expire(tokens[1], seconds) ? 1 : 0);
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "TTL":
+        {
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'TTL'");
+          return CommandResult.integer((int) storage.ttl(tokens[1]));
+        }
+
       default:
         return CommandResult.error("-ERR unknown command '" + tokens[0] + "'");
     }

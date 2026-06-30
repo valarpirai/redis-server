@@ -106,4 +106,48 @@ class CommandExecutorTest {
   void nullCommandReturnsError() {
     assertTrue(executor.execute((String) null).startsWith("-ERR"));
   }
+
+  @Test
+  void expireReturnsTrueForExistingKey() {
+    executor.execute("SET key value");
+    assertEquals("1", executor.execute("EXPIRE key 10"));
+  }
+
+  @Test
+  void expireReturnsFalseForMissingKey() {
+    assertEquals("0", executor.execute("EXPIRE missing 10"));
+  }
+
+  @Test
+  void expireInvalidSecondReturnsError() {
+    executor.execute("SET key value");
+    assertTrue(executor.execute("EXPIRE key notanumber").startsWith("-ERR"));
+  }
+
+  @Test
+  void ttlReturnsMinusOneForKeyWithoutExpiry() {
+    executor.execute("SET key value");
+    assertEquals("-1", executor.execute("TTL key"));
+  }
+
+  @Test
+  void ttlReturnsMinusTwoForMissingKey() {
+    assertEquals("-2", executor.execute("TTL missing"));
+  }
+
+  @Test
+  void ttlReturnsRemainingAfterExpire() {
+    executor.execute("SET key value");
+    executor.execute("EXPIRE key 10");
+    long ttl = Long.parseLong(executor.execute("TTL key"));
+    assertTrue(ttl > 0 && ttl <= 10);
+  }
+
+  @Test
+  void expiredKeyReturnsNil() throws InterruptedException {
+    executor.execute("SET key value");
+    executor.execute("EXPIRE key 0");
+    Thread.sleep(10);
+    assertEquals("(nil)", executor.execute("GET key"));
+  }
 }
