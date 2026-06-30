@@ -10,47 +10,59 @@ public class CommandExecutor {
     this.storage = storage;
   }
 
-  public String execute(String commandStr) {
-    if (commandStr == null || commandStr.isBlank()) {
-      return "-ERR empty command";
+  public CommandResult executeCommand(String[] tokens) {
+    if (tokens == null || tokens.length == 0) {
+      return CommandResult.error("-ERR empty command");
     }
 
-    String[] tokens = commandStr.trim().split("\\s+");
     String command = tokens[0].toUpperCase();
 
     switch (command) {
       case "PING":
-        return "PONG";
+        return CommandResult.pong();
 
       case "GET":
         {
-          if (tokens.length != 2) return "-ERR wrong number of arguments for 'GET'";
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'GET'");
           String value = storage.get(tokens[1]);
-          return value != null ? value : "(nil)";
+          return value != null ? CommandResult.bulk(value) : CommandResult.nil();
         }
 
       case "SET":
         {
-          if (tokens.length < 3) return "-ERR wrong number of arguments for 'SET'";
+          if (tokens.length < 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'SET'");
           String value = String.join(" ", Arrays.copyOfRange(tokens, 2, tokens.length));
           storage.set(tokens[1], value);
-          return "OK";
+          return CommandResult.ok();
         }
 
       case "DEL":
         {
-          if (tokens.length != 2) return "-ERR wrong number of arguments for 'DEL'";
-          return storage.delete(tokens[1]) ? "1" : "0";
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'DEL'");
+          return CommandResult.integer(storage.delete(tokens[1]) ? 1 : 0);
         }
 
       case "EXISTS":
         {
-          if (tokens.length != 2) return "-ERR wrong number of arguments for 'EXISTS'";
-          return storage.exists(tokens[1]) ? "1" : "0";
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'EXISTS'");
+          return CommandResult.integer(storage.exists(tokens[1]) ? 1 : 0);
         }
 
       default:
-        return "-ERR unknown command '" + tokens[0] + "'";
+        return CommandResult.error("-ERR unknown command '" + tokens[0] + "'");
     }
+  }
+
+  /** Convenience overload for plain-text callers and tests. Returns the text value. */
+  public String execute(String commandStr) {
+    if (commandStr == null || commandStr.isBlank()) {
+      return "-ERR empty command";
+    }
+    CommandResult result = executeCommand(commandStr.trim().split("\\s+"));
+    return result.kind() == CommandResult.Kind.NIL ? "(nil)" : result.value();
   }
 }

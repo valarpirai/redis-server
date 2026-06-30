@@ -104,6 +104,6 @@ class CommandExecutorTest {
 
   @Test
   void nullCommandReturnsError() {
-    assertTrue(executor.execute(null).startsWith("-ERR"));
+    assertTrue(executor.execute((String) null).startsWith("-ERR"));
   }
 }
