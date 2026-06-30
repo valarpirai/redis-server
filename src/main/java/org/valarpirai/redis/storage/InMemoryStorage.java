@@ -87,6 +87,54 @@ public class InMemoryStorage implements IStorage {
   }
 
   @Override
+  public long increment(String key, long delta) {
+    long[] result = {0};
+    storage.compute(
+        key,
+        (k, existing) -> {
+          long current =
+              (existing == null || existing.isExpired()) ? 0 : Long.parseLong(existing.value());
+          result[0] = current + delta;
+          long expiresAt = (existing != null && !existing.isExpired()) ? existing.expiresAt() : -1;
+          return new Entry(String.valueOf(result[0]), expiresAt, now());
+        });
+    return result[0];
+  }
+
+  @Override
+  public boolean setIfAbsent(String key, String value) {
+    boolean[] set = {false};
+    storage.compute(
+        key,
+        (k, existing) -> {
+          if (existing != null && !existing.isExpired()) return existing;
+          set[0] = true;
+          return new Entry(value, -1, now());
+        });
+    return set[0];
+  }
+
+  @Override
+  public int append(String key, String suffix) {
+    int[] len = {0};
+    storage.compute(
+        key,
+        (k, existing) -> {
+          String current = (existing == null || existing.isExpired()) ? "" : existing.value();
+          String newVal = current + suffix;
+          len[0] = newVal.length();
+          long expiresAt = (existing != null && !existing.isExpired()) ? existing.expiresAt() : -1;
+          return new Entry(newVal, expiresAt, now());
+        });
+    return len[0];
+  }
+
+  @Override
+  public void setEx(String key, String value, long seconds) {
+    storage.put(key, new Entry(value, now() + seconds * 1000, now()));
+  }
+
+  @Override
   public long usedMemoryBytes() {
     return storage.entrySet().stream()
         .filter(e -> !e.getValue().isExpired())

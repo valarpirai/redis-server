@@ -17,7 +17,7 @@ public sealed interface CommandResult
 
   record Bulk(String value) implements CommandResult {}
 
-  record Integer(int value) implements CommandResult {}
+  record Integer(long value) implements CommandResult {}
 
   record Error(String message) implements CommandResult {}
 
@@ -37,7 +37,7 @@ public sealed interface CommandResult
     return new Bulk(value);
   }
 
-  static CommandResult integer(int value) {
+  static CommandResult integer(long value) {
     return new Integer(value);
   }
 

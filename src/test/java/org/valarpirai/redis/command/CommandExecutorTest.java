@@ -350,4 +350,113 @@ class CommandExecutorTest {
     var outer = ((CommandResult.Array) result).elements();
     assertEquals("0", ((CommandResult.Bulk) outer.get(0)).value());
   }
+
+  @Test
+  void incrCreatesKeyAtOne() {
+    assertEquals("1", executor.execute("INCR counter"));
+  }
+
+  @Test
+  void incrIncrementsExistingValue() {
+    executor.execute("SET counter 10");
+    assertEquals("11", executor.execute("INCR counter"));
+  }
+
+  @Test
+  void decrDecrementsValue() {
+    executor.execute("SET counter 5");
+    assertEquals("4", executor.execute("DECR counter"));
+  }
+
+  @Test
+  void incrbyAddsAmount() {
+    executor.execute("SET counter 10");
+    assertEquals("15", executor.execute("INCRBY counter 5"));
+  }
+
+  @Test
+  void decrbySubtractsAmount() {
+    executor.execute("SET counter 10");
+    assertEquals("7", executor.execute("DECRBY counter 3"));
+  }
+
+  @Test
+  void incrOnNonIntegerReturnsError() {
+    executor.execute("SET key hello");
+    assertTrue(executor.execute("INCR key").startsWith("-ERR"));
+  }
+
+  @Test
+  void mgetReturnsValuesInOrder() {
+    executor.execute("SET a 1");
+    executor.execute("SET b 2");
+    CommandResult result = executor.executeCommand(new String[] {"MGET", "a", "missing", "b"});
+    var elements = ((CommandResult.Array) result).elements();
+    assertEquals("1", ((CommandResult.Bulk) elements.get(0)).value());
+    assertInstanceOf(CommandResult.Nil.class, elements.get(1));
+    assertEquals("2", ((CommandResult.Bulk) elements.get(2)).value());
+  }
+
+  @Test
+  void msetSetsAllKeys() {
+    assertEquals("OK", executor.execute("MSET k1 v1 k2 v2"));
+    assertEquals("v1", executor.execute("GET k1"));
+    assertEquals("v2", executor.execute("GET k2"));
+  }
+
+  @Test
+  void msetOddArgCountReturnsError() {
+    assertTrue(executor.execute("MSET k1").startsWith("-ERR"));
+  }
+
+  @Test
+  void setnxSetsWhenAbsent() {
+    assertEquals("1", executor.execute("SETNX key value"));
+    assertEquals("value", executor.execute("GET key"));
+  }
+
+  @Test
+  void setnxSkipsWhenPresent() {
+    executor.execute("SET key original");
+    assertEquals("0", executor.execute("SETNX key other"));
+    assertEquals("original", executor.execute("GET key"));
+  }
+
+  @Test
+  void setexSetsValueWithTtl() throws InterruptedException {
+    assertEquals("OK", executor.execute("SETEX key 1 value"));
+    assertEquals("value", executor.execute("GET key"));
+    Thread.sleep(1100);
+    assertEquals("(nil)", executor.execute("GET key"));
+  }
+
+  @Test
+  void setexZeroSecondsReturnsError() {
+    assertTrue(executor.execute("SETEX key 0 value").startsWith("-ERR"));
+  }
+
+  @Test
+  void appendCreatesKeyWhenAbsent() {
+    assertEquals("5", executor.execute("APPEND key hello"));
+    assertEquals("hello", executor.execute("GET key"));
+  }
+
+  @Test
+  void appendExtendsExistingValue() {
+    executor.execute("SET key hello");
+    CommandResult r = executor.executeCommand(new String[] {"APPEND", "key", " world"});
+    assertEquals(11L, ((CommandResult.Integer) r).value());
+    assertEquals("hello world", executor.execute("GET key"));
+  }
+
+  @Test
+  void strlenReturnsLength() {
+    executor.execute("SET key hello");
+    assertEquals("5", executor.execute("STRLEN key"));
+  }
+
+  @Test
+  void strlenReturnsZeroForMissingKey() {
+    assertEquals("0", executor.execute("STRLEN missing"));
+  }
 }

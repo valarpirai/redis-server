@@ -30,6 +30,21 @@ public interface IStorage {
   /** Returns a snapshot of all live (non-expired) keys. */
   Set<String> keys();
 
+  /**
+   * Atomically increments the integer value by delta. Creates the key with value {@code delta} if
+   * absent. Throws NumberFormatException if the existing value is not a valid integer.
+   */
+  long increment(String key, long delta);
+
+  /** Sets key to value only if it does not exist. Returns true if the key was set. */
+  boolean setIfAbsent(String key, String value);
+
+  /** Atomically appends suffix to the value. Creates the key if absent. Returns the new length. */
+  int append(String key, String suffix);
+
+  /** Sets key to value with a TTL of seconds. */
+  void setEx(String key, String value, long seconds);
+
   /** Approximate sum of all key and value lengths in bytes. Excludes JVM overhead. */
   long usedMemoryBytes();
 

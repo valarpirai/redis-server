@@ -126,7 +126,124 @@ public class CommandExecutor {
         {
           if (tokens.length != 2)
             return CommandResult.error("-ERR wrong number of arguments for 'TTL'");
-          return CommandResult.integer((int) storage.ttl(tokens[1]));
+          return CommandResult.integer(storage.ttl(tokens[1]));
+        }
+
+      case "INCR":
+        {
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'INCR'");
+          try {
+            return CommandResult.integer(storage.increment(tokens[1], 1));
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "DECR":
+        {
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'DECR'");
+          try {
+            return CommandResult.integer(storage.increment(tokens[1], -1));
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "INCRBY":
+        {
+          if (tokens.length != 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'INCRBY'");
+          try {
+            long delta = Long.parseLong(tokens[2]);
+            return CommandResult.integer(storage.increment(tokens[1], delta));
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "DECRBY":
+        {
+          if (tokens.length != 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'DECRBY'");
+          try {
+            long delta = Long.parseLong(tokens[2]);
+            return CommandResult.integer(storage.increment(tokens[1], -delta));
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "MGET":
+        {
+          if (tokens.length < 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'MGET'");
+          List<CommandResult> results = new ArrayList<>();
+          for (int i = 1; i < tokens.length; i++)
+            results.add(
+                storage.get(tokens[i]).map(CommandResult::bulk).orElseGet(CommandResult::nil));
+          return CommandResult.array(results);
+        }
+
+      case "MSET":
+        {
+          if (tokens.length < 3 || tokens.length % 2 == 0)
+            return CommandResult.error("-ERR wrong number of arguments for 'MSET'");
+          CommandResult oom = enforceMemoryLimit();
+          if (oom != null) return oom;
+          for (int i = 1; i < tokens.length; i += 2) {
+            storage.set(tokens[i], tokens[i + 1]);
+            appendToAof("SET", tokens[i], tokens[i + 1]);
+          }
+          return CommandResult.ok();
+        }
+
+      case "SETNX":
+        {
+          if (tokens.length != 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'SETNX'");
+          CommandResult oom = enforceMemoryLimit();
+          if (oom != null) return oom;
+          boolean set = storage.setIfAbsent(tokens[1], tokens[2]);
+          if (set) appendToAof("SET", tokens[1], tokens[2]);
+          return CommandResult.integer(set ? 1 : 0);
+        }
+
+      case "SETEX":
+        {
+          if (tokens.length != 4)
+            return CommandResult.error("-ERR wrong number of arguments for 'SETEX'");
+          try {
+            long seconds = Long.parseLong(tokens[2]);
+            if (seconds <= 0) return CommandResult.error("-ERR invalid expire time in 'SETEX'");
+            CommandResult oom = enforceMemoryLimit();
+            if (oom != null) return oom;
+            storage.setEx(tokens[1], tokens[3], seconds);
+            appendToAof("SET", tokens[1], tokens[3]);
+            appendToAof(
+                "EXPIREAT", tokens[1], String.valueOf(System.currentTimeMillis() + seconds * 1000));
+            return CommandResult.ok();
+          } catch (NumberFormatException e) {
+            return CommandResult.error("-ERR value is not an integer or out of range");
+          }
+        }
+
+      case "APPEND":
+        {
+          if (tokens.length != 3)
+            return CommandResult.error("-ERR wrong number of arguments for 'APPEND'");
+          int len = storage.append(tokens[1], tokens[2]);
+          appendToAof("APPEND", tokens[1], tokens[2]);
+          return CommandResult.integer(len);
+        }
+
+      case "STRLEN":
+        {
+          if (tokens.length != 2)
+            return CommandResult.error("-ERR wrong number of arguments for 'STRLEN'");
+          return CommandResult.integer(
+              storage.get(tokens[1]).map(v -> (long) v.length()).orElse(0L));
         }
 
       case "KEYS":
