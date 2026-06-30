@@ -1,9 +1,10 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.command;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.valarpirai.redis.storage.InMemoryStorage;
 
 class CommandExecutorTest {
 

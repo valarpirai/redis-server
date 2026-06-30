@@ -6,8 +6,8 @@
   <Match>
     <Bug pattern="EI_EXPOSE_REP2"/>
     <Or>
-      <Class name="org.valarpirai.redis.ClientHandler"/>
-      <Class name="org.valarpirai.redis.CommandExecutor"/>
+      <Class name="org.valarpirai.redis.server.ClientHandler"/>
+      <Class name="org.valarpirai.redis.command.CommandExecutor"/>
     </Or>
   </Match>
 
@@ -18,8 +18,8 @@
   <Match>
     <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
     <Or>
-      <Class name="org.valarpirai.redis.RespEncoder"/>
-      <Class name="org.valarpirai.redis.CommandExecutor"/>
+      <Class name="org.valarpirai.redis.protocol.RespEncoder"/>
+      <Class name="org.valarpirai.redis.command.CommandExecutor"/>
     </Or>
   </Match>
 </FindBugsFilter>

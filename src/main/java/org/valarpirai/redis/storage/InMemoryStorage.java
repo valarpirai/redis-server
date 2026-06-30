@@ -1,4 +1,4 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.storage;
 
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;

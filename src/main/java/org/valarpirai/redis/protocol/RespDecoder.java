@@ -1,4 +1,4 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.protocol;
 
 import java.io.BufferedReader;
 import java.io.IOException;

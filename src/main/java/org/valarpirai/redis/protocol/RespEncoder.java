@@ -1,4 +1,6 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.protocol;
+
+import org.valarpirai.redis.command.CommandResult;
 
 public class RespEncoder {
 

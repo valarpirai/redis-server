@@ -1,4 +1,4 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.server;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -8,6 +8,10 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.valarpirai.redis.command.CommandExecutor;
+import org.valarpirai.redis.command.CommandResult;
+import org.valarpirai.redis.protocol.RespDecoder;
+import org.valarpirai.redis.protocol.RespEncoder;
 
 public class ClientHandler implements Runnable {
 

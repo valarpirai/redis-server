@@ -1,4 +1,4 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.command;
 
 public sealed interface CommandResult
     permits CommandResult.Ok,

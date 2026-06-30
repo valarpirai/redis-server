@@ -1,8 +1,9 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.protocol;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.valarpirai.redis.command.CommandResult;
 
 class RespEncoderTest {
 

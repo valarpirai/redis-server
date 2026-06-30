@@ -1,4 +1,4 @@
-package org.valarpirai.redis;
+package org.valarpirai.redis.protocol;
 
 import static org.junit.jupiter.api.Assertions.*;
 
